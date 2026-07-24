@@ -1,0 +1,25 @@
+{
+  "_comment": "Live tuning knobs for the screener. Human explanation lives in scoring.md. One 'session' = one daily run (a trading day); weekends produce no session, so ages are counted in sessions, not calendar days.",
+
+  "timezone": "Asia/Jakarta",
+  "fetch_lookback_hours": 30,
+
+  "validity_window_days": 10,
+  "decay_halflife_days": 4,
+  "stale_after_quiet_sessions": 4,
+  "theme_reset_gap": 5,
+
+  "weights": {
+    "decayed_posts": 0.55,
+    "channels": 0.30,
+    "share": 0.15
+  },
+
+  "top_n_crowded": 20,
+  "heating_min_z": 1.0,
+  "heating_new_max_age": 3,
+  "aging_min_theme_age": 10,
+  "cooling_drop_ratio": 0.5,
+  "quiet_max_recent_posts": 1,
+  "spark_sessions": 10
+}

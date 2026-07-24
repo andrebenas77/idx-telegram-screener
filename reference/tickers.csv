@@ -1,0 +1,119 @@
+ticker,company,aliases,sector,liquid,ambiguous
+BBCA,Bank Central Asia,BCA|Bank BCA,Banks,1,0
+BBRI,Bank Rakyat Indonesia,BRI|Bank BRI,Banks,1,0
+BMRI,Bank Mandiri,Mandiri|Bank Mandiri,Banks,1,0
+BBNI,Bank Negara Indonesia,BNI|Bank BNI,Banks,1,0
+BRIS,Bank Syariah Indonesia,BSI|Bank Syariah,Banks,1,0
+ARTO,Bank Jago,Jago|Bank Jago,Banks,1,0
+BBTN,Bank Tabungan Negara,BTN|Bank BTN,Banks,1,0
+BBHI,Allo Bank,Allo Bank|Allo,Banks,1,0
+AGRO,Bank Raya Indonesia,Bank Raya,Banks,1,0
+BANK,Bank Aladin Syariah,Aladin,Banks,1,1
+AMAR,Bank Amar Indonesia,Amar Bank,Banks,0,0
+BFIN,BFI Finance,BFI,Financials,1,0
+SRTG,Saratoga Investama,Saratoga,Financials,1,0
+PNLF,Panin Financial,,Financials,1,0
+BTPS,BTPN Syariah,,Banks,1,0
+TLKM,Telkom Indonesia,Telkom,Telco,1,0
+EXCL,XL Axiata,XL Axiata,Telco,1,0
+ISAT,Indosat Ooredoo Hutchison,Indosat|IOH,Telco,1,0
+TOWR,Sarana Menara Nusantara,Protelindo,Towers,1,0
+TBIG,Tower Bersama,Tower Bersama,Towers,1,0
+MTEL,Dayamitra Telekomunikasi,Mitratel,Towers,1,0
+ASII,Astra International,Astra,Conglomerate,1,0
+UNTR,United Tractors,,Heavy Equipment,1,0
+AUTO,Astra Otoparts,Astra Otoparts,Auto Parts,1,1
+GJTL,Gajah Tunggal,Gajah Tunggal,Auto Parts,1,0
+TPIA,Chandra Asri Pacific,Chandra Asri,Chemicals,1,0
+BRPT,Barito Pacific,Barito Pacific,Chemicals,1,0
+BREN,Barito Renewables Energy,Barito Renewables,Renewables,1,0
+ESSA,ESSA Industries Indonesia,ESSA,Chemicals,1,0
+AMMN,Amman Mineral Internasional,Amman Mineral|Amman,Mining,1,0
+ANTM,Aneka Tambang,Antam,Mining,1,0
+INCO,Vale Indonesia,Vale,Mining,1,0
+TINS,Timah,Timah,Mining,1,0
+MDKA,Merdeka Copper Gold,Merdeka Copper,Mining,1,0
+MBMA,Merdeka Battery Materials,Merdeka Battery,Mining,1,0
+NCKL,Trimegah Bangun Persada,Harita Nickel|Harita,Mining,1,0
+BRMS,Bumi Resources Minerals,,Mining,1,0
+PSAB,J Resources Asia Pasifik,J Resources,Mining,0,0
+ADRO,Alamtri Resources Indonesia,Adaro|Alamtri,Coal,1,0
+AADI,Adaro Andalan Indonesia,Adaro Andalan,Coal,1,0
+ADMR,Adaro Minerals Indonesia,Adaro Minerals,Coal,1,0
+PTBA,Bukit Asam,,Coal,1,0
+ITMG,Indo Tambangraya Megah,,Coal,1,0
+HRUM,Harum Energy,Harum,Coal,1,0
+BYAN,Bayan Resources,Bayan,Coal,1,0
+GEMS,Golden Energy Mines,,Coal,1,0
+INDY,Indika Energy,Indika,Coal,1,0
+BUMI,Bumi Resources,Bumi,Coal,1,0
+DOID,Delta Dunia Makmur,Delta Dunia|BUMA,Coal Services,1,0
+DEWA,Darma Henwa,Darma Henwa,Coal Services,1,0
+PTRO,Petrindo Jaya Kreasi,Petrindo,Coal Services,1,0
+CUAN,Petrindo Jaya Kreasi,,Coal,1,1
+PGAS,Perusahaan Gas Negara,PGN,Energy,1,0
+MEDC,Medco Energi Internasional,Medco,Energy,1,0
+PGEO,Pertamina Geothermal Energy,Pertamina Geothermal,Energy,1,0
+AKRA,AKR Corporindo,AKR,Energy,1,0
+ELSA,Elnusa,Elnusa,Energy,1,0
+ENRG,Energi Mega Persada,Energi Mega,Energy,1,0
+RAJA,Rukun Raharja,Rukun Raharja,Energy,1,1
+TOBA,TBS Energi Utama,TBS Energi,Energy,1,0
+ICBP,Indofood CBP Sukses Makmur,Indofood CBP,Consumer,1,0
+INDF,Indofood Sukses Makmur,Indofood,Consumer,1,0
+UNVR,Unilever Indonesia,Unilever,Consumer,1,0
+MYOR,Mayora Indah,Mayora,Consumer,1,0
+CMRY,Cisarua Mountain Dairy,Cimory,Consumer,1,0
+ULTJ,Ultrajaya Milk,Ultra Milk|Ultrajaya,Consumer,1,0
+ROTI,Nippon Indosari Corpindo,Sari Roti,Consumer,1,0
+GOOD,Garudafood Putra Putri Jaya,Garudafood,Consumer,1,1
+SIDO,Industri Jamu Sido Muncul,Sido Muncul|Tolak Angin,Healthcare,1,0
+KLBF,Kalbe Farma,Kalbe,Healthcare,1,0
+KAEF,Kimia Farma,Kimia Farma,Healthcare,1,0
+INAF,Indofarma,Indofarma,Healthcare,0,0
+MIKA,Mitra Keluarga Karyasehat,Mitra Keluarga,Healthcare,1,0
+HEAL,Medikaloka Hermina,Hermina,Healthcare,1,0
+SILO,Siloam International Hospitals,Siloam,Healthcare,1,0
+CPIN,Charoen Pokphand Indonesia,Charoen Pokphand,Poultry,1,0
+JPFA,Japfa Comfeed Indonesia,Japfa,Poultry,1,0
+MAIN,Malindo Feedmill,Malindo,Poultry,0,0
+AMRT,Sumber Alfaria Trijaya,Alfamart,Retail,1,0
+MIDI,Midi Utama Indonesia,Alfamidi,Retail,1,0
+MAPI,Mitra Adiperkasa,,Retail,1,0
+MAPA,Map Aktif Adiperkasa,,Retail,1,0
+ACES,Aspirasi Hidup Indonesia,Ace Hardware,Retail,1,0
+ERAA,Erajaya Swasembada,Erajaya,Retail,1,0
+LPPF,Matahari Department Store,Matahari,Retail,1,0
+RALS,Ramayana Lestari Sentosa,Ramayana,Retail,1,0
+GGRM,Gudang Garam,Gudang Garam,Tobacco,1,0
+HMSP,HM Sampoerna,Sampoerna,Tobacco,1,0
+SMGR,Semen Indonesia,Semen Indonesia|SIG,Cement,1,0
+INTP,Indocement Tunggal Prakarsa,Indocement,Cement,1,0
+JSMR,Jasa Marga,Jasa Marga,Infrastructure,1,0
+INKP,Indah Kiat Pulp & Paper,Indah Kiat,Paper,1,0
+TKIM,Pabrik Kertas Tjiwi Kimia,Tjiwi Kimia,Paper,1,0
+KRAS,Krakatau Steel,Krakatau,Steel,1,0
+GOTO,GoTo Gojek Tokopedia,Gojek|Tokopedia|GoTo,Tech,1,0
+BUKA,Bukalapak.com,Bukalapak,Tech,1,0
+BELI,Global Digital Niaga,Blibli,Tech,1,0
+EMTK,Elang Mahkota Teknologi,Emtek,Tech,1,0
+FILM,MD Entertainment,MD Pictures|MD Entertainment,Media,1,1
+DCII,DCI Indonesia,,Data Center,1,0
+MTDL,Metrodata Electronics,Metrodata,Tech,1,0
+WIFI,Solusi Sinergi Digital,Surge,Tech,1,1
+WIRG,WIR Group,WIR Group,Tech,0,0
+CTRA,Ciputra Development,Ciputra,Property,1,0
+BSDE,Bumi Serpong Damai,BSD,Property,1,0
+PWON,Pakuwon Jati,Pakuwon,Property,1,0
+SMRA,Summarecon Agung,Summarecon,Property,1,0
+LPKR,Lippo Karawaci,Lippo Karawaci,Property,1,0
+ASRI,Alam Sutera Realty,Alam Sutera,Property,1,0
+PANI,Pantai Indah Kapuk Dua,PIK2|Agung Sedayu,Property,1,0
+DMAS,Puradelta Lestari,,Property,1,0
+KIJA,Kawasan Industri Jababeka,Jababeka,Property,1,0
+SSIA,Surya Semesta Internusa,Surya Semesta,Property,1,0
+BEST,Bekasi Fajar Industrial Estate,Bekasi Fajar,Property,1,1
+WSKT,Waskita Karya,Waskita,Construction,1,0
+WIKA,Wijaya Karya,Wika,Construction,1,0
+PTPP,PP Persero,,Construction,1,0
+ADHI,Adhi Karya,Adhi Karya,Construction,1,0

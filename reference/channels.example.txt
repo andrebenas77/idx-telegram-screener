@@ -1,0 +1,16 @@
+# Telegram channels to screen — ONE per line. Copy this file to  channels.txt  and edit.
+# Lines starting with # are ignored, as are blank lines.
+# (channels.txt is git-ignored so your list — including private channel names — stays local.)
+#
+# Accepted formats:
+#   @channelname                      (public)
+#   https://t.me/channelname          (public)
+#   name: My Channel Title            (PRIVATE — matched by its display name in your account)
+#   https://t.me/c/1234567890         (private, by link)
+#   -1001234567890                    (numeric channel id)
+#
+# For PRIVATE channels: make sure your Telegram account is already a MEMBER.
+# Examples (delete and add your own):
+
+# @somepublicidxchannel
+# name: My Private Trading Group

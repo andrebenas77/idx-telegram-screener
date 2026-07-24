@@ -1,0 +1,22 @@
+# SECRETS — never push. Telegram API keys + login session grant account access.
+secrets/
+*.session
+*.session-journal
+.env
+
+# Your channel list can name PRIVATE channels — keep it local on a public repo.
+# (The published site only ever shows a channel COUNT, never names.)
+reference/channels.txt
+
+# Working intermediates — regenerated every run (published output lives in docs/)
+build/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
