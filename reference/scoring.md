@@ -64,3 +64,29 @@ crowd_now = 100 × ( 0.55 · norm(decayed_posts) + 0.30 · norm(channels) + 0.15
 - Tickers flagged `ambiguous=1` (words like `CUAN`=profit, `RAJA`=king, `FILM`, `WIFI`, `GOOD`,
   `BEST`, `BANK`, `AUTO`) match **only** via `$CASHTAG` to avoid false positives. After your first
   real run, review the leaderboard and flag any new offenders in `tickers.csv`.
+
+## Price, volume & news (v2)
+
+Each crowded ticker is paired with market data so you can see **whether the chatter is already
+moving the stock, and whether the news is out** — the setup for a "sell on news" fade.
+
+**Price/volume** (`scripts/fetch_prices.py`, Yahoo v8 `.JK`, the **last completed session** —
+for a morning run that is yesterday's close):
+- `Δ1d` = last close vs prior close (green/red).
+- `Δ5d` = last close vs 5 sessions ago (short momentum).
+- `RVOL` = last session volume ÷ its `vol_avg_window` (20-day) average. **Bold when ≥ `rvol_hot`** —
+  a mention spike *with* a volume spike is real interest; without it, it's just talk.
+
+**News** (`build/news-<date>.json`, top `news_top_n` crowded, context-only) — latest headline + link
+per ticker; shown as a `news (N)` badge in the table and full cards in the **In the News** section.
+
+**Signal** (derived, thresholds in `config.json`) — priority order:
+| Signal | Rule | Read |
+|---|---|---|
+| **Distribution** | `Δ1d ≤ down_pct` and `RVOL ≥ rvol_hot` | Crowded but sold on heavy volume — the crowd is exiting. |
+| **Confirmed / Late** | `Δ1d ≥ up_pct` and (news out **or** `RVOL ≥ rvol_hot`) | Crowded + up + catalyst → classic **sell-on-news** fade risk. |
+| **Extended** | `Δ5d ≥ ext_pct` | Already had a big multi-day run — late to chase. |
+| **Anticipatory** | small `\|Δ1d\|` and **no news yet** | Crowded, price quiet, catalyst not out — watch for the pop. |
+
+Defaults: `up_pct 3`, `down_pct -3`, `rvol_hot 1.8`, `ext_pct 15`. All in `config.json`. If price or
+news is missing for a ticker, its cells show "–" and it simply gets no Signal (never blocks a build).

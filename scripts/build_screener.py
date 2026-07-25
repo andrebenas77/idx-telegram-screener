@@ -63,6 +63,16 @@ def load_history():
     return rows
 
 
+def load_build_json(prefix, today):
+    p = BUILD / f"{prefix}-{today}.json"
+    if p.exists():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
 def sparkline(vals, w=90, h=22):
     if not vals:
         return ""
@@ -103,6 +113,10 @@ def main():
     HALF = cfg["decay_halflife_days"]
     STALE = cfg["stale_after_quiet_sessions"]
     RESET = cfg["theme_reset_gap"]
+    UP = cfg.get("up_pct", 3.0)
+    DOWN = cfg.get("down_pct", -3.0)
+    RVOLHOT = cfg.get("rvol_hot", 1.8)
+    EXT = cfg.get("ext_pct", 15.0)
     meta = load_tickers()
     rows = load_history()
 
@@ -113,6 +127,11 @@ def main():
         sys.exit(f"No history on or before {today}")
     idx_asc = {d: i for i, d in enumerate(usable)}
     last_i = len(usable) - 1
+
+    pdata = load_build_json("prices", today)
+    prices = pdata.get("prices", {})
+    price_date = pdata.get("price_date")
+    news = load_build_json("news", today).get("news", {})
 
     def age(d):
         return last_i - idx_asc[d]
@@ -185,6 +204,15 @@ def main():
                 "peak5": 0, "last_active": 999, "theme_age": 0, "spark": [], "recent5_sum": 0,
             })
 
+    # Attach price/volume (Yahoo .JK) and news to each record (v2). Missing -> None/[].
+    for r in recs:
+        pr = prices.get(r["ticker"], {})
+        r["chg1d"] = pr.get("chg1d")
+        r["chg5d"] = pr.get("chg5d")
+        r["rvol"] = pr.get("rvol")
+        r["close"] = pr.get("close")
+        r["news"] = news.get(r["ticker"], [])
+
     active = [r for r in recs if r["decayed"] > 0]
     max_dp = max((r["decayed"] for r in active), default=1) or 1
     max_ch = max((r["channels"] for r in active), default=1) or 1
@@ -233,6 +261,48 @@ def main():
         return (f'<div class="bar"><span style="width:{max(3, min(100, v)):.0f}%"></span>'
                 f'</div><span class="barval">{v:.0f}</span>')
 
+    def pct_cell(v):
+        if v is None:
+            return '<span class="mut">–</span>'
+        cls = "up" if v > 0 else ("down" if v < 0 else "flat")
+        return f'<span class="{cls}">{v:+.1f}%</span>'
+
+    def rvol_cell(v):
+        if v is None:
+            return '<span class="mut">–</span>'
+        hot = " rv-hot" if v >= RVOLHOT else ""
+        return f'<span class="rv{hot}">{v:.1f}x</span>'
+
+    def signal_of(r):
+        c, c5, rv = r.get("chg1d"), r.get("chg5d"), (r.get("rvol") or 0)
+        hasnews = bool(r.get("news"))
+        if c is None:
+            return ("", "")
+        if c <= DOWN and rv >= RVOLHOT:
+            return ("Distribution", "sig-dist")
+        if c >= UP and (hasnews or rv >= RVOLHOT):
+            return ("Confirmed", "sig-conf")   # crowded + up + news/volume = sell-on-news risk
+        if c5 is not None and c5 >= EXT:
+            return ("Extended", "sig-ext")
+        if abs(c) < UP and not hasnews:
+            return ("Anticipatory", "sig-antic")
+        return ("", "")
+
+    def signal_cell(r):
+        label, css = signal_of(r)
+        return f'<span class="sig {css}">{label}</span>' if label else '<span class="mut">–</span>'
+
+    def news_badge(r):
+        items = r.get("news") or []
+        if not items:
+            return '<span class="mut">–</span>'
+        top = items[0]
+        return (f'<a class="newsdot" href="{esc(top.get("url","#"))}" target="_blank" rel="noopener" '
+                f'title="{esc(top.get("headline",""))}">news ({len(items)})</a>')
+
+    def price_snip(r):
+        return " · " + pct_cell(r["chg1d"]) if r.get("chg1d") is not None else ""
+
     def newtag(r):
         return ' <span class="tag tag-new">NEW</span>' if r["theme_age"] <= cfg["heating_new_max_age"] else ""
 
@@ -244,15 +314,37 @@ def main():
             f'<td class="tk">{esc(r["ticker"])}{newtag(r)}</td>'
             f'<td class="co">{esc(r["company"])}<span class="sec">{esc(r["sector"])}</span></td>'
             f'<td class="crd">{crowd_bar(r["crowd"])}</td>'
-            f'<td class="num">{r["posts"]}</td>'
-            f'<td class="num">{r["channels"]}</td>'
-            f'<td class="num">{r["share"]*100:.0f}%</td>'
-            f'<td class="ctr">{heat_badge(r["z"])}</td>'
-            f'<td class="num">Day {r["theme_age"]}</td>'
+            f'<td class="num">{r["posts"]}<span class="sub">{r["channels"]} ch</span></td>'
+            f'<td class="num">{pct_cell(r.get("chg1d"))}</td>'
+            f'<td class="num">{pct_cell(r.get("chg5d"))}</td>'
+            f'<td class="num">{rvol_cell(r.get("rvol"))}</td>'
+            f'<td class="ctr">{signal_cell(r)}</td>'
+            f'<td class="ctr">{news_badge(r)}</td>'
             f'<td class="spk">{sparkline(r["spark"])}</td>'
             "</tr>")
     crowded_html = ("".join(crowded_rows)
-                    or '<tr><td colspan="10" class="empty">No mentions in the active window yet.</td></tr>')
+                    or '<tr><td colspan="11" class="empty">No mentions in the active window yet.</td></tr>')
+
+    def news_section():
+        out = []
+        for r in crowded[:cfg.get("news_top_n", 5)]:
+            items = r.get("news") or []
+            head = (f'<div class="nw-tk">{esc(r["ticker"])} '
+                    f'<span class="nw-co">{esc(r["company"])}</span> {price_snip(r).replace(" · ", "")}</div>')
+            if items:
+                lis = "".join(
+                    f'<li><a href="{esc(n.get("url","#"))}" target="_blank" rel="noopener">'
+                    f'{esc(n.get("headline",""))}</a>'
+                    f'<span class="nw-meta">{esc(n.get("outlet",""))}'
+                    + (f' · {esc(n.get("date",""))}' if n.get("date") else "") + '</span>'
+                    + (f'<div class="nw-sum">{esc(n.get("summary",""))}</div>' if n.get("summary") else "")
+                    + '</li>'
+                    for n in items[:3])
+                body = f'<ul class="nw-list">{lis}</ul>'
+            else:
+                body = '<div class="nw-none">No fresh news found in the last ~48h.</div>'
+            out.append(f'<div class="nw-card">{head}{body}</div>')
+        return "".join(out) or '<p class="empty">Run the news scan on the top crowded names to populate.</p>'
 
     def cards(items, metric):
         if not items:
@@ -270,11 +362,11 @@ def main():
 
     def metric_val(r, metric):
         if metric == "heat":
-            return f'{heat_badge(r["z"])} · {r["posts"]} posts · Day {r["theme_age"]}'
+            return f'{heat_badge(r["z"])} · {r["posts"]} posts · Day {r["theme_age"]}' + price_snip(r)
         if metric == "aging":
-            return f'Day {r["theme_age"]} · crowd {r["crowd"]:.0f} · {r["posts"]} posts'
+            return f'Day {r["theme_age"]} · crowd {r["crowd"]:.0f} · {r["posts"]} posts' + price_snip(r)
         if metric == "cool":
-            return f'{r["posts"]} posts today · peak5 {r["peak5"]} ▼'
+            return f'{r["posts"]} posts today · peak5 {r["peak5"]} ▼' + price_snip(r)
         if metric == "expired":
             return f'quiet {r["last_active"]} sessions'
         if metric == "quiet":
@@ -288,11 +380,14 @@ def main():
         stat_bits.insert(0, f"{chans_scanned} channels")
     if msgs_scanned is not None:
         stat_bits.append(f"{msgs_scanned} messages scanned")
+    if price_date:
+        stat_bits.append(f"prices @ close {price_date}")
     page = (template
             .replace("{{DATE}}", esc(today))
             .replace("{{GENERATED}}", esc(gen))
             .replace("{{SUMMARY_STATS}}", esc(" · ".join(stat_bits)))
             .replace("{{CROWDED_ROWS}}", crowded_html)
+            .replace("{{NEWS_CARDS}}", news_section())
             .replace("{{HEATING_CARDS}}", cards(heating, "heat"))
             .replace("{{AGING_CARDS}}", cards(aging, "aging"))
             .replace("{{COOLING_CARDS}}", cards(cooling, "cool"))
@@ -314,8 +409,8 @@ def main():
     arch = template
     for a, b in [("{{DATE}}", "Archive"), ("{{GENERATED}}", esc(gen)),
                  ("{{SUMMARY_STATS}}", f"{len(files)} daily screens"),
-                 ("{{CROWDED_ROWS}}", ""), ("{{HEATING_CARDS}}", ""), ("{{AGING_CARDS}}", ""),
-                 ("{{COOLING_CARDS}}", ""), ("{{EXPIRED_CARDS}}", ""),
+                 ("{{CROWDED_ROWS}}", ""), ("{{NEWS_CARDS}}", ""), ("{{HEATING_CARDS}}", ""),
+                 ("{{AGING_CARDS}}", ""), ("{{COOLING_CARDS}}", ""), ("{{EXPIRED_CARDS}}", ""),
                  ("{{QUIET_CARDS}}", ""), ("{{ARCHIVE_LINK}}", "index.html")]:
         arch = arch.replace(a, b)
     marker = '<main class="wrap">'
@@ -330,6 +425,8 @@ def main():
     print(f"  Cooling: {', '.join(r['ticker'] for r in cooling[:6]) or '(none)'}")
     print(f"  Expired: {', '.join(r['ticker'] for r in expired[:6]) or '(none)'}")
     print(f"  Quiet/contrarian: {', '.join(r['ticker'] for r in quiet[:8]) or '(none)'}")
+    print(f"  Prices loaded: {len(prices)} tickers (close {price_date or 'n/a'}) | "
+          f"News: {sum(len(v) for v in news.values())} items on {len(news)} tickers")
 
 
 if __name__ == "__main__":

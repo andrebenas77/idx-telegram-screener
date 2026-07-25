@@ -12,10 +12,16 @@ It measures **attention/chatter, not sentiment or direction.** Not investment ad
 ## What each run does
 1. `fetch_mentions.py` reads the last ~30h of messages from your channels (via your own Telegram
    account, Telethon) and counts ticker mentions using a curated dictionary + nicknames.
-2. `build_screener.py` scores **crowdedness** — recency-weighted (4-session half-life) so short-lived
-   IDX themes fade on their own — and renders a dark HTML board with six buckets:
-   **Most Crowded Now · Heating Up · Aging/Late · Cooling/Fading · Expired · Quiet (contrarian).**
-3. Today's counts are appended to `data/history.csv` (the trend memory) and the site + archive update.
+2. `fetch_prices.py` pulls the last completed session for every mentioned ticker from Yahoo `.JK` —
+   `Δ1d`, `Δ5d`, `RVOL` (volume vs 20-day avg). Free, no key.
+3. A quick **news scan** grabs the latest headline+link for the top-5 crowded names
+   (see `reference/news-sources.md`).
+4. `build_screener.py` scores **crowdedness** — recency-weighted (4-session half-life) so short-lived
+   IDX themes fade on their own — folds in price/volume/news, and renders a dark HTML board with six
+   buckets (**Most Crowded · Heating · Aging · Cooling · Expired · Quiet-contrarian**) plus a derived
+   **Signal** per crowded name (Distribution / Confirmed / Extended / Anticipatory) for the
+   sell-on-news watch.
+5. Today's counts are appended to `data/history.csv` (the trend memory) and the site + archive update.
 
 ## One-time setup
 
@@ -69,7 +75,9 @@ builds, verifies the page, shows a summary, and (after you confirm) commits & pu
 Manual run:
 ```bash
 py scripts/fetch_mentions.py        # read channels -> update data/history.csv
-py scripts/build_screener.py        # score + render docs/index.html
+py scripts/fetch_prices.py          # Yahoo .JK price + volume for mentioned tickers
+# (news scan for the top-5 crowded is done by Claude -> build/news-<date>.json)
+py scripts/build_screener.py        # score + fold in price/news -> render docs/index.html
 ```
 
 Preview locally: serve the `docs/` folder (e.g. `py -m http.server 8788 --directory docs`) and open

@@ -33,6 +33,14 @@ Full per-run detail, used for verification and for the page header stats.
 }
 ```
 
+## `build/prices-YYYY-MM-DD.json` (git-ignored — from fetch_prices.py)
+Per-ticker last-completed-session data: `{ "prices": { "BBCA": {"close","chg1d","chg5d","rvol","vol",
+"currency","price_date"}, ... }, "price_date": "...", "failed": [...] }`.
+
+## `build/news-YYYY-MM-DD.json` (git-ignored — from the news scan)
+`{ "news": { "TICKER": [ {"headline","url","outlet","date","summary"} ] } }` for the top crowded
+names. Schema + rules in [news-sources.md](news-sources.md).
+
 ## Published site (`docs/`, served by GitHub Pages)
 - `docs/index.html` — today's screener (6 sections: Most Crowded / Heating / Aging / Cooling /
   Expired / Quiet).
