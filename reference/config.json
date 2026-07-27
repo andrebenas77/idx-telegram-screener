@@ -30,5 +30,14 @@
   "up_pct": 3,
   "down_pct": -3,
   "rvol_hot": 1.8,
-  "ext_pct": 15
+  "ext_pct": 15,
+
+  "_comment_v3": "Sectors API foreign flow. Yahoo stays the price source (Sectors has no OHLC). tier scales the daily credit spend: lean ~32, standard ~50, deep ~91. flow_top_n crowded tickers get exact net foreign flow; cohort_top_n also get the retail/institutional split that drives the Retail-trap signal.",
+  "sectors": {
+    "enabled": true,
+    "tier": "standard",
+    "flow_top_n": 12,
+    "cohort_top_n": 4,
+    "flow_trend_sessions": 3
+  }
 }

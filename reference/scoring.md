@@ -90,3 +90,43 @@ per ticker; shown as a `news (N)` badge in the table and full cards in the **In 
 
 Defaults: `up_pct 3`, `down_pct -3`, `rvol_hot 1.8`, `ext_pct 15`. All in `config.json`. If price or
 news is missing for a ticker, its cells show "–" and it simply gets no Signal (never blocks a build).
+
+## Foreign & institutional flow (v3)
+
+Chatter measures **retail attention**. Flow answers the question that actually matters: *who is on
+the other side of it?* That pairing is the point — a crowded name with institutions buying is a
+different trade from a crowded name with institutions selling.
+
+Data comes from `scripts/fetch_flows.py` (Sectors API) into `build/flows-<date>.json`:
+
+| Field | Meaning |
+|---|---|
+| `latest_net` | **Exact** net foreign flow in IDR for the session (`/v2/foreign-flow/`) |
+| `run_sessions` / `run_direction` | Consecutive sessions of same-direction flow, e.g. `8 in` |
+| `sum_3` | Net over the last 3 sessions — catches a one-day reversal inside a longer trend |
+| `inst_net` / `retail_net` | Cohort split, summed across ~all brokers in each cohort |
+
+IDX is a closed market: foreign and domestic net always sum to zero per (symbol, date), so domestic
+flow is simply `-latest_net`. No second call is needed.
+
+### Flow signals — these take precedence over the price/news ladder
+
+| Signal | Rule | Read |
+|---|---|---|
+| **Retail trap** | `latest_net < 0` **and** `inst_net < 0` **and** `retail_net > 0` | Foreigners and institutions selling while retail buys — the crowd is the exit liquidity |
+| **Smart money** | `latest_net > 0` **and** `inst_net > 0` | Foreign and institutional accumulation agree with the chatter |
+| **Distribution (flow)** | `run_direction == "out"` for ≥ `flow_trend_sessions` | Sustained foreign selling under cover of attention |
+
+Evaluated **before** Distribution / Confirmed / Extended / Anticipatory. A ticker with no flow data
+falls through to the price ladder exactly as in v2, and its Foreign cell shows "–".
+
+**"Quiet accumulation" deliberately lives elsewhere.** Flow is only fetched for the *crowded*
+tickers, so a quiet name has no flow data here by construction. That bucket is produced by the
+morning brief's radar, which measures a wider shortlist — see
+`indonesia-morning-news-brief/scripts/build_radar.py`.
+
+### Cost
+`config.json → sectors`: `tier` (`lean` ~32 / `standard` ~50 / `deep` ~91 credits),
+`flow_top_n` tickers measured exactly, `cohort_top_n` also split by cohort. Calls are cached per
+trading session in a directory shared with the morning brief, so whichever runs second pays only
+for tickers the first did not fetch.

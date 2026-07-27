@@ -35,6 +35,21 @@ def esc(s):
     return html.escape(str(s), quote=True)
 
 
+def fmt_idr(v):
+    """Compact signed IDR: +173.6bn, -1.49T. Values here are whole rupiah."""
+    if v is None:
+        return None
+    a = abs(v)
+    sign = "+" if v > 0 else ("-" if v < 0 else "")
+    if a >= 1e12:
+        return f"{sign}{a/1e12:,.2f}T"
+    if a >= 1e9:
+        return f"{sign}{a/1e9:,.1f}bn"
+    if a >= 1e6:
+        return f"{sign}{a/1e6:,.0f}m"
+    return f"{sign}{a:,.0f}"
+
+
 def load_tickers():
     meta = {}
     with open(TICKERS, encoding="utf-8") as f:
@@ -117,6 +132,8 @@ def main():
     DOWN = cfg.get("down_pct", -3.0)
     RVOLHOT = cfg.get("rvol_hot", 1.8)
     EXT = cfg.get("ext_pct", 15.0)
+    SEC = cfg.get("sectors", {})
+    FLOW_RUN = SEC.get("flow_trend_sessions", 3)
     meta = load_tickers()
     rows = load_history()
 
@@ -132,6 +149,12 @@ def main():
     prices = pdata.get("prices", {})
     price_date = pdata.get("price_date")
     news = load_build_json("news", today).get("news", {})
+
+    # v3: exact net foreign flow + retail/institutional cohort split (Sectors API).
+    # Keyed by the trading session, which is what history.csv dates already are.
+    fdata = load_build_json("flows", today)
+    flows = (fdata.get("tickers") or {}) if fdata.get("available") else {}
+    flow_session = fdata.get("date")
 
     def age(d):
         return last_i - idx_asc[d]
@@ -212,6 +235,7 @@ def main():
         r["rvol"] = pr.get("rvol")
         r["close"] = pr.get("close")
         r["news"] = news.get(r["ticker"], [])
+        r["flow"] = flows.get(r["ticker"], {})
 
     active = [r for r in recs if r["decayed"] > 0]
     max_dp = max((r["decayed"] for r in active), default=1) or 1
@@ -273,7 +297,42 @@ def main():
         hot = " rv-hot" if v >= RVOLHOT else ""
         return f'<span class="rv{hot}">{v:.1f}x</span>'
 
+    def flow_cell(r):
+        f = r.get("flow") or {}
+        net = f.get("latest_net")
+        if net is None:
+            return '<span class="mut">–</span>'
+        cls = "up" if net > 0 else ("down" if net < 0 else "flat")
+        bits = []
+        run, direction = f.get("run_sessions"), f.get("run_direction")
+        if run and direction in ("in", "out"):
+            bits.append(f"{run}s {direction}")
+        if f.get("inst_net") is not None:
+            bits.append(f"inst {fmt_idr(f['inst_net'])}")
+        sub = f'<span class="sub">{esc(" · ".join(bits))}</span>' if bits else ""
+        return f'<span class="{cls}">{esc(fmt_idr(net))}</span>{sub}'
+
+    def flow_signal_of(r):
+        """Flow beats price. Chatter measures retail attention; this asks who is on the
+        other side of it. Returns ("", "") when no flow data was fetched for the ticker.
+        """
+        f = r.get("flow") or {}
+        net, inst, retail = f.get("latest_net"), f.get("inst_net"), f.get("retail_net")
+        if net is None:
+            return ("", "")
+        run, direction = (f.get("run_sessions") or 0), f.get("run_direction")
+        if net < 0 and inst is not None and inst < 0 and retail is not None and retail > 0:
+            return ("Retail trap", "sig-trap")
+        if net > 0 and inst is not None and inst > 0:
+            return ("Smart money", "sig-smart")
+        if direction == "out" and run >= FLOW_RUN:
+            return ("Distribution (flow)", "sig-fdist")
+        return ("", "")
+
     def signal_of(r):
+        flow_sig = flow_signal_of(r)
+        if flow_sig[0]:
+            return flow_sig
         c, c5, rv = r.get("chg1d"), r.get("chg5d"), (r.get("rvol") or 0)
         hasnews = bool(r.get("news"))
         if c is None:
@@ -318,12 +377,13 @@ def main():
             f'<td class="num">{pct_cell(r.get("chg1d"))}</td>'
             f'<td class="num">{pct_cell(r.get("chg5d"))}</td>'
             f'<td class="num">{rvol_cell(r.get("rvol"))}</td>'
+            f'<td class="num">{flow_cell(r)}</td>'
             f'<td class="ctr">{signal_cell(r)}</td>'
             f'<td class="ctr">{news_badge(r)}</td>'
             f'<td class="spk">{sparkline(r["spark"])}</td>'
             "</tr>")
     crowded_html = ("".join(crowded_rows)
-                    or '<tr><td colspan="11" class="empty">No mentions in the active window yet.</td></tr>')
+                    or '<tr><td colspan="12" class="empty">No mentions in the active window yet.</td></tr>')
 
     def news_section():
         out = []
@@ -382,6 +442,8 @@ def main():
         stat_bits.append(f"{msgs_scanned} messages scanned")
     if price_date:
         stat_bits.append(f"prices @ close {price_date}")
+    if flow_session:
+        stat_bits.append(f"foreign flow @ {flow_session} ({len(flows)} tickers)")
     page = (template
             .replace("{{DATE}}", esc(today))
             .replace("{{GENERATED}}", esc(gen))
@@ -427,6 +489,13 @@ def main():
     print(f"  Quiet/contrarian: {', '.join(r['ticker'] for r in quiet[:8]) or '(none)'}")
     print(f"  Prices loaded: {len(prices)} tickers (close {price_date or 'n/a'}) | "
           f"News: {sum(len(v) for v in news.values())} items on {len(news)} tickers")
+    if flows:
+        flagged = [(r["ticker"], signal_of(r)[0]) for r in crowded if flow_signal_of(r)[0]]
+        print(f"  Foreign flow: {len(flows)} tickers @ {flow_session or 'n/a'}"
+              + (f" | flow signals: " + ", ".join(f"{t} ({s})" for t, s in flagged)
+                 if flagged else " | no flow signals triggered"))
+    else:
+        print("  Foreign flow: none (run scripts/fetch_flows.py, or check SECTORS_API_KEY)")
 
 
 if __name__ == "__main__":
