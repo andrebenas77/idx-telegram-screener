@@ -83,6 +83,27 @@ py scripts/build_screener.py        # score + fold in price/news -> render docs/
 Preview locally: serve the `docs/` folder (e.g. `py -m http.server 8788 --directory docs`) and open
 `http://localhost:8788`.
 
+## Run it unattended (VPS + phone)
+A small Jakarta VPS can run the whole thing at **07:00 WIB on weekdays** and push the summary to your
+phone over Telegram — so the board is waiting for you before the 09:00 open instead of depending on
+you being at the desk.
+
+```
+07:00 WIB timer -> run_daily.sh -> claude -p "/idx-telegram-screener run"
+                                -> GitHub Pages + Telegram summary to your phone
+```
+
+- **Box:** ~Rp109k/mo (2 vCPU / 2 GB, Ubuntu 24.04). Claude Code documents a 4 GB minimum, so the
+  setup adds a 4 GB swapfile and verifies under real load before you commit — see the runbook.
+- **Auth:** `claude setup-token` gives a 1-year token that runs on your existing Pro/Max plan, so
+  there's no per-run API billing.
+- **Phone:** the bot messages you each morning; send `/run` to re-run on demand, `/status` for the
+  last result. It only ever obeys your own chat id.
+- **Your PC still works.** The VPS is just the scheduled writer; run the skill locally whenever you
+  like — step 1 pulls first so the two never conflict.
+
+Full runbook, systemd units and troubleshooting: **[deploy/VPS-SETUP.md](deploy/VPS-SETUP.md)**.
+
 ## How it works
 Small standard-library + Telethon Python scripts do the deterministic counting and rendering; Claude
 does the judgment (setup, sanity-checking matches, summarizing, publishing). The crowdedness

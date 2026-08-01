@@ -1,5 +1,9 @@
 # SECRETS — never push. Telegram API keys + login session grant account access.
-secrets/
+# NOTE: 'secrets/*' (contents), not 'secrets/' (the directory) — git cannot
+# re-include a file whose parent DIRECTORY is excluded, and we need the
+# credential-free .env.example to ship so a fresh clone can be set up.
+secrets/*
+!secrets/.env.example
 *.session
 *.session-journal
 .env

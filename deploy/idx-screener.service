@@ -1,0 +1,33 @@
+[Unit]
+Description=IDX Telegram Screener — daily run
+Documentation=https://github.com/andrebenas77/idx-telegram-screener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=screener
+Group=screener
+WorkingDirectory=/home/screener/idx-telegram-screener
+
+# SECTORS_API_KEY must arrive here: scripts/sectors_client.py reads it from the
+# process environment, NOT from secrets/.env. Without this the Foreign column
+# silently renders "-" with no error anywhere.
+EnvironmentFile=/etc/idx-screener.env
+
+# The native installer puts claude in ~/.local/bin, which is not on systemd's PATH.
+Environment=PATH=/home/screener/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+ExecStart=/bin/bash /home/screener/idx-telegram-screener/scripts/run_daily.sh --trigger timer
+
+# A run is a few minutes; if it wedges, kill it rather than block tomorrow's.
+TimeoutStartSec=30min
+
+# Modest hardening. The service still needs network, $HOME, and /tmp for the lock.
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=full
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target

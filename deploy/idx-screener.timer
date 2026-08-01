@@ -1,0 +1,20 @@
+[Unit]
+Description=IDX Telegram Screener — 07:00 WIB on weekdays
+Documentation=https://github.com/andrebenas77/idx-telegram-screener
+
+[Timer]
+# Weekdays only: IDX is closed at the weekend, so a Sat/Sun run would add empty
+# sessions to data/history.csv. Timezone is explicit so this is correct even if
+# the host clock is ever changed away from Asia/Jakarta.
+OnCalendar=Mon..Fri *-*-* 07:00:00 Asia/Jakarta
+
+# If the box was asleep or rebooting at 07:00, run as soon as it's back.
+Persistent=true
+
+# Avoid hammering Yahoo/Sectors at exactly the same second every day.
+RandomizedDelaySec=120
+
+Unit=idx-screener.service
+
+[Install]
+WantedBy=timers.target

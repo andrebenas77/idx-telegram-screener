@@ -1,0 +1,32 @@
+[Unit]
+Description=IDX Telegram Screener — bot listener (/run from your phone)
+Documentation=https://github.com/andrebenas77/idx-telegram-screener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=screener
+Group=screener
+WorkingDirectory=/home/screener/idx-telegram-screener
+
+EnvironmentFile=/etc/idx-screener.env
+Environment=PATH=/home/screener/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+ExecStart=/usr/bin/python3 /home/screener/idx-telegram-screener/scripts/bot_listener.py
+
+# Long-polls Telegram forever; restart on any exit (network drop, API blip).
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=false
+
+# Must match idx-screener.service: the listener detects an in-progress run by
+# testing the flock on /tmp/idx-screener.lock. A private /tmp on either unit
+# would hide the lock and the bot would happily start overlapping runs.
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target

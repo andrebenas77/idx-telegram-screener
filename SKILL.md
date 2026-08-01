@@ -31,7 +31,7 @@ Copy this checklist into your reply and check items off:
 
 ```
 IDX Telegram Screener — progress
-- [ ] 1. Preflight: secrets/.env + secrets/screener.session + reference/channels.txt exist
+- [ ] 1. Preflight: git pull --rebase, then secrets/.env + secrets/screener.session + channels.txt
 - [ ] 2. Fetch mentions:  py scripts/fetch_mentions.py
 - [ ] 3. Sanity-check the printed Top-15 (counts plausible? any junk match?)
 - [ ] 4. Fetch prices:  py scripts/fetch_prices.py   (Yahoo .JK: last close + Δ1d/Δ5d/RVOL)
@@ -44,8 +44,11 @@ IDX Telegram Screener — progress
 ```
 
 ### Step 1 — Preflight
-Confirm `secrets/.env`, `secrets/screener.session`, and a non-empty `reference/channels.txt` exist.
-If `screener.session` is missing, stop and have the user run `py scripts/tg_login.py` first.
+Start with `git pull --rebase` — the VPS publishes a board every weekday morning, so the local
+checkout is usually behind. Skipping this is the only way the two machines can conflict.
+
+Then confirm `secrets/.env`, `secrets/screener.session`, and a non-empty `reference/channels.txt`
+exist. If `screener.session` is missing, stop and have the user run `py scripts/tg_login.py` first.
 On Windows use the `py` launcher (or the full path
 `C:/Users/ASUS/AppData/Local/Python/bin/python.exe`).
 
@@ -116,12 +119,30 @@ Show counts + top names, **ask before pushing**, then commit & push. Confirm the
 `https://andrebenas77.github.io/idx-telegram-screener/`. See [README.md](README.md) for git/Pages.
 (If the git push is network-blocked, publish via the manual upload path in the README.)
 
+## Automated runs (VPS)
+A Jakarta VPS runs this same workflow unattended at **07:00 WIB on weekdays** via
+`scripts/run_daily.sh`, then pushes the step-8 summary to Telegram. Setup is in
+[deploy/VPS-SETUP.md](deploy/VPS-SETUP.md).
+
+Two things differ from an interactive run, both deliberate:
+- **Step 9 does not ask.** Nobody is at the keyboard at 07:00, so the runner's prompt carries
+  standing authorization to commit and push. This is a documented relaxation of Rule 4 that applies
+  **only** to `run_daily.sh` — when a human is present, keep asking.
+- **A failing step doesn't abort the run.** It's recorded and the remaining steps continue, so a
+  dead news source can't cost you the whole board.
+
+The user can also send the bot `/run` from their phone to re-run on demand, and `/status` to see the
+last result. Both machines share one repo, so the PC's step-1 `git pull --rebase` is what keeps them
+from diverging.
+
 ## Layout
 ```
 SKILL.md              # this workflow
 README.md             # setup (Telegram API + login + GitHub/Pages)
 reference/            # channels.txt · tickers.csv · config.json · scoring.md · output-format.md · news-sources.md
 scripts/              # tg_login.py · fetch_mentions.py · fetch_prices.py · fetch_flows.py · sectors_client.py · build_screener.py
+                      # run_daily.sh · notify_telegram.py · bot_listener.py   (VPS automation)
+deploy/               # VPS-SETUP.md + systemd units (idx-screener.service/.timer, idx-bot.service)
 assets/template.html  # dark self-contained HTML shell
 data/history.csv      # accumulating daily counts (committed)
 docs/                 # published site (GitHub Pages)
