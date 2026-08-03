@@ -52,7 +52,19 @@ def compute(ticker, rng, vol_win):
     meta = res["meta"]
     q = res["indicators"]["quote"][0]
     ts = res["timestamp"]
-    closes, vols = q["close"], q["volume"]
+    closes, vols = list(q["close"]), list(q["volume"])
+
+    # Yahoo can lag consolidating the newest daily bar: it serves close=None
+    # while meta already holds that session's closing print. Left alone, the
+    # bar is filtered out and the board silently falls back to the session
+    # before it. Backfill from meta when meta's timestamp is the same session.
+    mt, mp = meta.get("regularMarketTime"), meta.get("regularMarketPrice")
+    if ts and closes and closes[-1] is None and mt and mp is not None:
+        if datetime.fromtimestamp(mt, WIB).date() == datetime.fromtimestamp(ts[-1], WIB).date():
+            closes[-1] = mp
+            if vols[-1] is None:
+                vols[-1] = meta.get("regularMarketVolume")
+
     rows = [(t, c, v) for t, c, v in zip(ts, closes, vols) if c is not None]
     if rows and not session_closed(rows[-1][0]):
         rows = rows[:-1]  # drop the still-forming session
