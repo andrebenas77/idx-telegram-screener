@@ -32,6 +32,20 @@ def yahoo_chart(symbol, rng):
         return json.load(resp)
 
 
+def session_closed(bar_ts, now=None):
+    """True once the session a bar belongs to has finished.
+
+    IDX regular trading ends 16:00 WIB and pre-closing runs to ~16:15, so a bar
+    stamped with today's date is still forming until then. Yahoo serves that
+    partial bar as the newest row, which would make close/chg1d/rvol an
+    intraday snapshot rather than the completed session the board expects.
+    """
+    now = now or datetime.now(WIB)
+    if datetime.fromtimestamp(bar_ts, WIB).date() < now.date():
+        return True
+    return (now.hour, now.minute) >= (16, 15)
+
+
 def compute(ticker, rng, vol_win):
     d = yahoo_chart(ticker + ".JK", rng)
     res = d["chart"]["result"][0]
@@ -40,6 +54,8 @@ def compute(ticker, rng, vol_win):
     ts = res["timestamp"]
     closes, vols = q["close"], q["volume"]
     rows = [(t, c, v) for t, c, v in zip(ts, closes, vols) if c is not None]
+    if rows and not session_closed(rows[-1][0]):
+        rows = rows[:-1]  # drop the still-forming session
     if len(rows) < 2:
         return None
     last_t, last_c, last_v = rows[-1]
