@@ -108,17 +108,45 @@ def parse_tickers(raw: str | None) -> list[str]:
     return out
 
 
-def resolve_session_date(c: SectorsClient, wanted: str | None):
+def resolve_session_date(c: SectorsClient, wanted: str | None, max_back: int = 5):
     """Ask the API which session is current rather than guessing around weekends.
 
     /v2/brokers/top/ echoes the date it actually served, so one call both resolves the
     trading date and returns the Stage-1 broker list.
+
+    Falls back to earlier sessions when `wanted` isn't available upstream. The screener
+    labels its session in Jakarta time, but the API validates against UTC — so a morning
+    run (07:00 WIB = 00:00 UTC) asks for a date the API still calls "in the future" and
+    gets a 400. Stepping back a day at a time degrades to the last completed session
+    instead of silently losing the whole Foreign column, and absorbs weekends and IDX
+    holidays the same way. Prices are the previous close anyway, so the pairing is right.
     """
     payload = c.top_brokers(date=wanted, metric="net", origin="foreign",
                             n_brokers=TIERS["deep"]["brokers"])
-    if not payload:
+    if payload:
+        return payload.get("date") or wanted, payload
+    if not wanted:
         return None, None
-    return payload.get("date") or wanted, payload
+
+    try:
+        start = datetime.strptime(wanted, "%Y-%m-%d")
+    except ValueError:
+        return None, None
+
+    for back in range(1, max_back + 1):
+        probe = (start - timedelta(days=back)).strftime("%Y-%m-%d")
+        payload = c.top_brokers(date=probe, metric="net", origin="foreign",
+                                n_brokers=TIERS["deep"]["brokers"])
+        if payload:
+            # The first attempt's 400 is expected on any pre-rollover run and is now
+            # handled, so drop it. An unattended run that reports a daily "error"
+            # which isn't one just teaches you to ignore the error line.
+            c.errors[:] = [e for e in c.errors
+                           if "Date cannot be in the future" not in e]
+            print(f"[flows] {wanted} unavailable upstream — "
+                  f"falling back to last completed session {probe}")
+            return payload.get("date") or probe, payload
+    return None, None
 
 
 def stage1_candidates(c: SectorsClient, session: str, brokers: list[dict],
