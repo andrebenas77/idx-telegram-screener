@@ -100,30 +100,109 @@ COST="$(printf '%s' "$OUT" | jq -r '.total_cost_usd // empty' 2>/dev/null || tru
 [[ -z "$SUMMARY" ]] && SUMMARY="$(printf '%s' "$OUT" | tail -c 3000)"
 [[ -n "$COST" ]] && log "cost: \$${COST}"
 
+# ---------------------------------------------------------------------------
+# Post-run verification.
+#
+# A zero exit from claude is NOT evidence that the run did anything. If the
+# skill fails to resolve — e.g. ~/.claude/skills/idx-telegram-screener is
+# missing, which is exactly what happened on this VPS's first run — claude exits
+# 0 within seconds having produced nothing, and an unguarded script reports
+# "run ok". At 07:00 with nobody watching, that silent no-op looks identical to
+# a good day. These checks are what tell the two apart.
+#
+# FATAL = there is no published board today. WARN = it published, but thinner
+# than it should be (a data source was down); still worth reading.
+# ---------------------------------------------------------------------------
+FATAL=()
+WARN=()
+
+# 1. Duration. A real run reads the channels, then prices, brokers and news; the
+#    measured baseline on this box is ~230s. Under a minute, it did not run.
+MIN_DUR=60
+if [[ $DUR -lt $MIN_DUR ]]; then
+    FATAL+=("finished in ${DUR}s but a real run takes ~230s — the skill likely never executed")
+fi
+
+# 2. fetch_mentions.py writes this on every run; no file means Telegram was
+#    never read, which is the whole input to the screen.
+if [[ ! -s "${ROOT}/build/mentions-${DATE}.json" ]]; then
+    FATAL+=("build/mentions-${DATE}.json missing or empty — Telegram was never read")
+fi
+
+# 3. The board that gets served must carry today's date.
+if ! grep -q "$DATE" "${ROOT}/docs/index.html" 2>/dev/null; then
+    FATAL+=("docs/index.html does not mention ${DATE} — the board was not rebuilt")
+fi
+
+# 4. Committed-but-unpushed is invisible from the server yet leaves the site on
+#    yesterday's board. This is a real failure that used to pass silently.
+if git fetch -q origin main >>"$LOG" 2>&1; then
+    UNPUSHED="$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)"
+    if [[ "${UNPUSHED:-0}" -gt 0 ]]; then
+        FATAL+=("${UNPUSHED} commit(s) never pushed — the published site was not updated")
+    fi
+else
+    WARN+=("could not reach GitHub to confirm the board was published")
+fi
+
+# 5. Advisory only: a data-source outage still yields a usable board.
+[[ -s "${ROOT}/build/prices-${DATE}.json" ]]  || WARN+=("no price data for ${DATE}")
+[[ -s "${ROOT}/build/brokers-${DATE}.json" ]] || WARN+=("no broker-flow data for ${DATE}")
+
+for w in ${WARN[@]+"${WARN[@]}"};  do log "[warn] $w"; done
+for f in ${FATAL[@]+"${FATAL[@]}"}; do log "[!!] $f"; done
+
+OK=true
+[[ $CODE -ne 0 || ${#FATAL[@]} -gt 0 ]] && OK=false
+
+# jq -R/-s turns the arrays into JSON safely; the empty case needs handling
+# separately because printf on an empty array still emits one blank line.
+if [[ ${#FATAL[@]} -eq 0 ]]; then FATAL_JSON='[]'
+else FATAL_JSON="$(printf '%s\n' "${FATAL[@]}" | jq -R . | jq -s -c .)"; fi
+if [[ ${#WARN[@]} -eq 0 ]]; then WARN_JSON='[]'
+else WARN_JSON="$(printf '%s\n' "${WARN[@]}" | jq -R . | jq -s -c .)"; fi
+
 cat >"$STATE" <<JSON
 {
   "finished_at": "$(date '+%F %T %Z')",
+  "ok": ${OK},
   "exit_code": ${CODE},
   "duration_s": ${DUR},
   "trigger": "${TRIGGER}",
-  "cost_usd": "${COST}"
+  "cost_usd": "${COST}",
+  "problems": ${FATAL_JSON},
+  "warnings": ${WARN_JSON}
 }
 JSON
 
-if [[ $CODE -eq 0 ]]; then
+WARNTEXT=""
+if [[ ${#WARN[@]} -gt 0 ]]; then
+    WARNTEXT="
+
+Warnings:
+$(printf -- '- %s\n' "${WARN[@]}")"
+fi
+
+if $OK; then
     notify --title "IDX screener — ${DATE}" \
            --text "${SUMMARY}
 
-Board: ${SITE}"
+Board: ${SITE}${WARNTEXT}"
     log "=== run ok ==="
 else
+    REASON=""
+    [[ $CODE -ne 0 ]] && REASON="- claude exited ${CODE}"$'\n'
+    [[ ${#FATAL[@]} -gt 0 ]] && REASON="${REASON}$(printf -- '- %s\n' "${FATAL[@]}")"
     notify --title "IDX screener FAILED — ${DATE}" \
-           --text "Exit ${CODE} after ${DUR}s (trigger: ${TRIGGER}).
+           --text "The ${TRIGGER} run did not produce a published board.
+
+${REASON}
+Ran ${DUR}s.
 
 Last output:
-${SUMMARY}
+$(printf '%s' "$SUMMARY" | tail -c 1200)
 
 Log: ${LOG}"
     log "=== run FAILED ==="
-    exit "$CODE"
+    exit 1
 fi

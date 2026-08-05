@@ -108,13 +108,28 @@ def status_text():
         st = json.loads(STATE.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return "Last run state file is unreadable."
-    ok = "ok" if st.get("exit_code") == 0 else f"FAILED (exit {st.get('exit_code')})"
-    return (
-        f"Last run: {st.get('finished_at', '?')}\n"
-        f"Result: {ok}\n"
-        f"Trigger: {st.get('trigger', '?')}\n"
-        f"Duration: {st.get('duration_s', '?')}s"
-    )
+    # "ok" is the verified verdict: claude can exit 0 having produced nothing, so
+    # exit_code alone would report a silent no-op as success. Older state files
+    # predate the field, hence the fallback.
+    if "ok" in st:
+        good = bool(st["ok"])
+    else:
+        good = st.get("exit_code") == 0
+    verdict = "ok" if good else f"FAILED (exit {st.get('exit_code')})"
+
+    problems = st.get("problems") or []
+    warnings = st.get("warnings") or []
+    lines = [
+        f"Last run: {st.get('finished_at', '?')}",
+        f"Result: {verdict}",
+        f"Trigger: {st.get('trigger', '?')}",
+        f"Duration: {st.get('duration_s', '?')}s",
+    ]
+    if problems:
+        lines.append("\nProblems:\n" + "\n".join(f"- {p}" for p in problems))
+    if warnings:
+        lines.append("\nWarnings:\n" + "\n".join(f"- {w}" for w in warnings))
+    return "\n".join(lines)
 
 
 def trigger_run(token, chat_id):
