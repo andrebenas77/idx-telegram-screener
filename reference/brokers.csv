@@ -26,6 +26,7 @@ BB,institutional,Verdhana Sekuritas Indonesia,foreign
 KZ,institutional,CLSA Sekuritas Indonesia,foreign
 RX,institutional,Macquarie Sekuritas Indonesia,foreign — NOT "MQ"; MQ is not a valid IDX code
 ZP,institutional,Maybank Sekuritas Indonesia,foreign — mostly algorithmic institutional flow
+TP,institutional,OCBC Sekuritas Indonesia,foreign — genuinely institutional but small size
 
 # --- High net worth: large private money, often ahead of the tape ---------
 YU,hnw,CGS International Sekuritas Indonesia,foreign
@@ -40,3 +41,10 @@ MG,scalper,Semesta Indovest Sekuritas,registry calls this "institutional" — it
 XL,retail,Stockbit Sekuritas Digital,
 XC,retail,Ajaib Sekuritas Asia,
 YP,retail,Mirae Asset Sekuritas Indonesia,registry calls this "institutional" — largest retail book on IDX
+KK,retail,Phillip Sekuritas Indonesia,registry calls this "institutional" — pure retail flow
+XA,retail,NH Korindo Sekuritas Indonesia,registry calls this "institutional" — pure retail flow
+
+# Deliberately NOT classified, left in "other":
+#   DP  DBS Vickers        — too small to matter
+#   DR  RHB Sekuritas      — mostly retail with some small institutional; mixed, so
+#                            bucketing it either way would pollute that group's signal
