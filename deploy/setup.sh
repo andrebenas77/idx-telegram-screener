@@ -16,7 +16,7 @@ set -euo pipefail
 # Andre's SSH public key. Public keys are not secret — they are designed to be
 # published (GitHub serves everyone's at github.com/<user>.keys). The matching
 # PRIVATE key never leaves his PC.
-PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIpFuXM3fCU8db+pMDOl3ThIHq9vb/Dg9djiYWOP5s9D idx-screener"
+PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICMJtd3jr09Nub42vrhRJRY0A3lUBpZIZXIFj5uiGqGV idx-screener-3"
 
 REPO="https://github.com/andrebenas77/idx-telegram-screener.git"
 DEST="$HOME/idx-telegram-screener"
