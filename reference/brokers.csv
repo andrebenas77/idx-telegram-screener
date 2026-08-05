@@ -25,6 +25,7 @@ CC,institutional,Mandiri Sekuritas,domestic
 BB,institutional,Verdhana Sekuritas Indonesia,foreign
 KZ,institutional,CLSA Sekuritas Indonesia,foreign
 RX,institutional,Macquarie Sekuritas Indonesia,foreign — NOT "MQ"; MQ is not a valid IDX code
+ZP,institutional,Maybank Sekuritas Indonesia,foreign — mostly algorithmic institutional flow
 
 # --- High net worth: large private money, often ahead of the tape ---------
 YU,hnw,CGS International Sekuritas Indonesia,foreign
