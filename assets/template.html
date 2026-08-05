@@ -94,6 +94,37 @@
   .nw-sum{color:var(--txt);font-size:12px;margin-top:2px;opacity:.85}
   .nw-none{color:var(--mut);font-size:12px;font-style:italic}
   @media(max-width:560px){.arch{columns:2}}
+
+  /* --- v3.1 Groups column ------------------------------------------------ */
+  .grpc{min-width:172px;vertical-align:middle}
+  .grp{display:grid;grid-template-columns:auto 1fr auto;gap:1px 8px;
+    font-size:11px;line-height:1.5;font-variant-numeric:tabular-nums}
+  .gl{color:var(--mut)}
+  .gn{text-align:right;font-weight:700}
+  .gs{text-align:right;color:var(--mut)}
+
+  /* --- v3.1 expandable broker detail -------------------------------------- */
+  .chev{display:inline-block;width:11px;color:var(--mut);font-size:10px;
+    transition:transform .12s ease;margin-right:2px}
+  tr.exp{cursor:pointer}
+  tr.exp:hover .chev{color:var(--fg)}
+  tr.exp.open .chev{transform:rotate(90deg);color:var(--accent)}
+  tr.det{display:none}
+  tr.det.open{display:table-row}
+  tr.det>td{background:var(--panel2);padding:12px 14px 14px}
+  .detwrap{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:640px){.detwrap{grid-template-columns:1fr}}
+  .detwrap h4{margin:0 0 6px;font-size:11px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--mut);font-weight:700}
+  ul.bl{list-style:none;margin:0;padding:0;font-size:12px}
+  ul.bl li{display:grid;grid-template-columns:26px 1fr auto auto;gap:8px;
+    align-items:baseline;padding:2px 0;border-bottom:1px solid var(--line)}
+  ul.bl li:last-child{border-bottom:0}
+  .bc{font-weight:800;color:var(--fg)}
+  .bn{color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bg{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+  .bv{font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+  .anom{margin:10px 0 0;font-size:11px;color:#fdba74}
 </style>
 </head>
 <body>
@@ -115,14 +146,18 @@
     required to agree — it is only four brokers and is noisy) ·
     <b>Quiet accumulation</b> = institutions buying 3+ sessions with the price still flat ·
     <b>Scalper churn</b> = heavy fast-money turnover that nets out flat (activity, not positioning) ·
-    <b>Distribution (flow)</b> = sustained institutional selling.</div>
+    <b>Distribution (flow)</b> = sustained institutional selling.<br>
+    <b>Groups</b> breaks the same session down across all five cohorts — including <b>scalper</b> (MG) and
+    <b>other</b> (unclassified brokers). The percentage is that group's share of the day's <b>traded value</b>,
+    which separates an institution-dominated tape from a retail one: the same signal means more where the
+    group driving it is a larger part of the turnover. <b>Click any ticker row</b> to see the named brokers behind it.</div>
 
   <h2><span class="ic"></span>Most Crowded Now <span class="sub">where the herd is + is it already moving?</span></h2>
   <div class="panel">
     <table>
       <thead><tr>
         <th>#</th><th>Ticker</th><th>Company</th><th>Crowd</th><th>Posts</th>
-        <th>Δ1d</th><th>Δ5d</th><th>RVOL</th><th>Flow</th><th>Signal</th><th>News</th><th>10-session</th>
+        <th>Δ1d</th><th>Δ5d</th><th>RVOL</th><th>Flow</th><th>Groups</th><th>Signal</th><th>News</th><th>10-session</th>
       </tr></thead>
       <tbody>{{CROWDED_ROWS}}</tbody>
     </table>
@@ -152,5 +187,18 @@
     Not investment advice.
   </footer>
 </main>
+<script>
+// Expandable broker detail. Progressive enhancement only: with JS off the table
+// is still fully readable, the detail rows simply stay hidden. Self-contained —
+// the page must never reach out to anything external.
+document.addEventListener('click', function (e) {
+  var tr = e.target.closest ? e.target.closest('tr.exp') : null;
+  if (!tr) return;
+  var det = tr.nextElementSibling;
+  if (!det || !det.classList.contains('det')) return;
+  var open = det.classList.toggle('open');
+  tr.classList.toggle('open', open);
+});
+</script>
 </body>
 </html>

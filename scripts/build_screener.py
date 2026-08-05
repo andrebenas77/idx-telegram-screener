@@ -187,6 +187,12 @@ def main():
                 "scalper_gross": (grp("scalper", "buy_idr") or 0)
                                  + (grp("scalper", "sell_idr") or 0),
                 "anomalies": t.get("anomalies") or [],
+                # v3.1: the full picture for the Groups column and the expandable
+                # detail. scalper and other were computed from day one but never
+                # rendered, so MG's flow was invisible on the board.
+                "groups": g,
+                "top_buyers": t.get("top_buyers") or [],
+                "top_sellers": t.get("top_sellers") or [],
             }
     else:
         fdata = load_build_json("flows", today)
@@ -358,6 +364,64 @@ def main():
         sub = f'<span class="sub">{esc(" · ".join(bits))}</span>' if bits else ""
         return f'<span class="{cls}">{esc(fmt_idr(net))}</span>{sub}'
 
+    # Professionals first, so the eye lands on the money that matters.
+    GROUP_ORDER = (("institutional", "inst"), ("hnw", "hnw"), ("scalper", "scalper"),
+                   ("retail", "retail"), ("other", "other"))
+
+    def groups_cell(r):
+        """All five groups: net, plus each one's share of the day's traded value.
+
+        The share is what net alone cannot say — it separates an institution-dominated
+        tape (BBCA, inst 66% of turnover) from a retail one (BUMI, retail 25%), which
+        changes how much the same signal is worth.
+        """
+        g = (r.get("flow") or {}).get("groups") or {}
+        if not g:
+            return '<span class="mut">–</span>'
+
+        total = sum(((v.get("buy_idr") or 0) + (v.get("sell_idr") or 0))
+                    for v in g.values())
+        rows = []
+        for key, label in GROUP_ORDER:
+            v = g.get(key) or {}
+            net = v.get("net_idr")
+            gross = (v.get("buy_idr") or 0) + (v.get("sell_idr") or 0)
+            if not gross and not net:
+                rows.append(f'<span class="gl">{label}</span>'
+                            f'<span class="gn mut">–</span><span class="gs mut">–</span>')
+                continue
+            cls = "up" if (net or 0) > 0 else ("down" if (net or 0) < 0 else "flat")
+            share = f"{gross / total * 100:.1f}%" if total else "–"
+            rows.append(f'<span class="gl">{label}</span>'
+                        f'<span class="gn {cls}">{esc(fmt_idr(net or 0))}</span>'
+                        f'<span class="gs">{share}</span>')
+        return f'<div class="grp">{"".join(rows)}</div>'
+
+    def detail_row(r, ncols):
+        """Named brokers behind the numbers, hidden until the row is clicked."""
+        f = r.get("flow") or {}
+        buyers, sellers = f.get("top_buyers") or [], f.get("top_sellers") or []
+        if not buyers and not sellers:
+            return ""
+
+        def side(rows, cls):
+            out = []
+            for b in rows:
+                net = b.get("net_idr") or 0
+                out.append(
+                    f'<li><span class="bc">{esc(b.get("code",""))}</span>'
+                    f'<span class="bn">{esc(b.get("name",""))}</span>'
+                    f'<span class="bg">{esc(b.get("group",""))}</span>'
+                    f'<span class="bv {cls}">{esc(fmt_idr(net))}</span></li>')
+            return "".join(out) or '<li class="mut">none</li>'
+
+        anom = "".join(f'<p class="anom">{esc(a)}</p>' for a in (f.get("anomalies") or []))
+        return (f'<tr class="det" data-for="{esc(r["ticker"])}"><td colspan="{ncols}">'
+                f'<div class="detwrap">'
+                f'<div><h4>Top buyers</h4><ul class="bl">{side(buyers, "up")}</ul></div>'
+                f'<div><h4>Top sellers</h4><ul class="bl">{side(sellers, "down")}</ul></div>'
+                f'</div>{anom}</td></tr>')
+
     def flow_signal_of(r):
         """Flow beats price. Chatter measures retail attention; this asks who is on the
         other side of it. Returns ("", "") when no flow data was fetched for the ticker.
@@ -438,12 +502,18 @@ def main():
     def newtag(r):
         return ' <span class="tag tag-new">NEW</span>' if r["theme_age"] <= cfg["heating_new_max_age"] else ""
 
+    NCOLS = 13          # keep in sync with the <thead> in assets/template.html
     crowded_rows = []
     for i, r in enumerate(crowded, 1):
+        det = detail_row(r, NCOLS)
+        # Only a row that actually has broker detail looks clickable, so a ticker
+        # outside the measured top-N never invites a click that does nothing.
+        chev = '<span class="chev">▸</span>' if det else ""
+        tr_open = f'<tr class="exp" data-tk="{esc(r["ticker"])}">' if det else "<tr>"
         crowded_rows.append(
-            "<tr>"
+            tr_open +
             f'<td class="rank">{i}</td>'
-            f'<td class="tk">{esc(r["ticker"])}{newtag(r)}</td>'
+            f'<td class="tk">{chev}{esc(r["ticker"])}{newtag(r)}</td>'
             f'<td class="co">{esc(r["company"])}<span class="sec">{esc(r["sector"])}</span></td>'
             f'<td class="crd">{crowd_bar(r["crowd"])}</td>'
             f'<td class="num">{r["posts"]}<span class="sub">{r["channels"]} ch</span></td>'
@@ -451,10 +521,13 @@ def main():
             f'<td class="num">{pct_cell(r.get("chg5d"))}</td>'
             f'<td class="num">{rvol_cell(r.get("rvol"))}</td>'
             f'<td class="num">{flow_cell(r)}</td>'
+            f'<td class="grpc">{groups_cell(r)}</td>'
             f'<td class="ctr">{signal_cell(r)}</td>'
             f'<td class="ctr">{news_badge(r)}</td>'
             f'<td class="spk">{sparkline(r["spark"])}</td>'
             "</tr>")
+        if det:
+            crowded_rows.append(det)
     crowded_html = ("".join(crowded_rows)
                     or '<tr><td colspan="12" class="empty">No mentions in the active window yet.</td></tr>')
 
