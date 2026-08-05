@@ -35,7 +35,7 @@ IDX Telegram Screener — progress
 - [ ] 2. Fetch mentions:  py scripts/fetch_mentions.py
 - [ ] 3. Sanity-check the printed Top-15 (counts plausible? any junk match?)
 - [ ] 4. Fetch prices:  py scripts/fetch_prices.py   (Yahoo .JK: last close + Δ1d/Δ5d/RVOL)
-- [ ] 4b. Fetch flows:  py scripts/fetch_flows.py    (Sectors: net foreign + retail/inst split)
+- [ ] 4b. Fetch broker flow:  py scripts/fetch_brokers.py  (inst/hnw/scalper/retail + net foreign)
 - [ ] 5. News scan (top-5 crowded) -> build/news-<date>.json   (see reference/news-sources.md)
 - [ ] 6. Build:  py scripts/build_screener.py
 - [ ] 7. Verify docs/index.html in the browser preview
@@ -72,21 +72,28 @@ Pulls the **last completed session** (morning run = yesterday's close) for every
 from Yahoo `.JK` — `Δ1d`, `Δ5d`, and `RVOL` (volume ÷ 20-day avg) → `build/prices-<date>.json`.
 Free, no key. Missing/failed tickers degrade to "–" (never blocks the build).
 
-### Step 4b — Fetch foreign & institutional flow
+### Step 4b — Fetch broker-cohort flow
 ```bash
-py scripts/fetch_flows.py
+py scripts/fetch_brokers.py
 ```
-Reads today's crowded tickers straight from `build/mentions-<date>.json` (no arguments needed),
-then pulls **exact** net foreign flow per ticker plus the retail/institutional cohort split for the
-top names → `build/flows-<date>.json`. Needs `SECTORS_API_KEY`; if it is unset the script writes an
-`available: false` payload and the build simply shows "–" in the Foreign column.
+Reads today's crowded tickers straight from `build/mentions-<date>.json` (no arguments needed) and
+makes **one call per ticker** (1 credit) that returns every broker's buy/sell/net for 14 days →
+`build/brokers-<date>.json`. From that single payload it derives the behavioural split
+(**institutional / hnw / scalper / retail**), net foreign flow, accumulation runs, and ticket sizes.
 
-Spend is set by `reference/config.json → sectors` (`tier`, `flow_top_n`, `cohort_top_n`); the
-script prints credits used and cache hits. The cache is **shared with the morning brief** for the
-same trading session, so running both costs far less than the sum of the two.
+Groups live in [reference/brokers.csv](reference/brokers.csv) — behavioural, hand-edited, and
+deliberately *not* Sectors' `cohort` field (which calls YP and MG institutional). Needs
+`SECTORS_API_KEY`; if unset the script writes `available: false` and the board shows "–" in Flow.
 
-This is what makes the **Retail trap** / **Smart money** / **Distribution (flow)** signals possible
-— see [reference/scoring.md](reference/scoring.md).
+Spend is set by `reference/config.json → brokers` (`top_n`, `credit_ceiling`). The cache is
+**shared with the morning brief** for the same trading session, so running both costs far less than
+the sum of the two.
+
+This drives the **Retail trap / Smart money / Quiet accumulation / Distribution (flow) / Scalper
+churn** signals — see [reference/scoring.md](reference/scoring.md).
+
+> `scripts/fetch_flows.py` is the deprecated v2 path, kept one release as a fallback. The build
+> prefers `brokers-<date>.json` and only reads `flows-<date>.json` if it is absent.
 
 ### Step 5 — News scan (top-5 crowded)
 For the top `news_top_n` crowded tickers, find the **latest real news** (last ~48h) and write
@@ -139,8 +146,8 @@ from diverging.
 ```
 SKILL.md              # this workflow
 README.md             # setup (Telegram API + login + GitHub/Pages)
-reference/            # channels.txt · tickers.csv · config.json · scoring.md · output-format.md · news-sources.md
-scripts/              # tg_login.py · fetch_mentions.py · fetch_prices.py · fetch_flows.py · sectors_client.py · build_screener.py
+reference/            # channels.txt · tickers.csv · brokers.csv · config.json · scoring.md · output-format.md · news-sources.md
+scripts/              # tg_login.py · fetch_mentions.py · fetch_prices.py · fetch_brokers.py · sectors_client.py · build_screener.py
                       # run_daily.sh · notify_telegram.py · bot_listener.py   (VPS automation)
 deploy/               # VPS-SETUP.md + systemd units (idx-screener.service/.timer, idx-bot.service)
 assets/template.html  # dark self-contained HTML shell
