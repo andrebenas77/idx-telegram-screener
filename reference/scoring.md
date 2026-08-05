@@ -91,42 +91,79 @@ per ticker; shown as a `news (N)` badge in the table and full cards in the **In 
 Defaults: `up_pct 3`, `down_pct -3`, `rvol_hot 1.8`, `ext_pct 15`. All in `config.json`. If price or
 news is missing for a ticker, its cells show "–" and it simply gets no Signal (never blocks a build).
 
-## Foreign & institutional flow (v3)
+## Broker-cohort flow (v3)
 
 Chatter measures **retail attention**. Flow answers the question that actually matters: *who is on
 the other side of it?* That pairing is the point — a crowded name with institutions buying is a
 different trade from a crowded name with institutions selling.
 
-Data comes from `scripts/fetch_flows.py` (Sectors API) into `build/flows-<date>.json`:
+v3 answers it at **broker level**. `scripts/fetch_brokers.py` makes one `/v2/broker-summary/` call
+per crowded ticker (1 credit, up to 14 days) and gets every broker's buy/sell/net/lots/frequency for
+each day. Everything below is derived from that single payload → `build/brokers-<date>.json`.
 
-| Field | Meaning |
+### Who counts as what
+
+Groups are **behavioural**, defined in `reference/brokers.csv`:
+
+| Group | Codes |
 |---|---|
-| `latest_net` | **Exact** net foreign flow in IDR for the session (`/v2/foreign-flow/`) |
-| `run_sessions` / `run_direction` | Consecutive sessions of same-direction flow, e.g. `8 in` |
-| `sum_3` | Net over the last 3 sessions — catches a one-day reversal inside a longer trend |
-| `inst_net` / `retail_net` | Cohort split, summed across ~all brokers in each cohort |
+| `institutional` | BK JP Morgan · AK UBS · CC Mandiri · BB Verdhana · KZ CLSA · **RX Macquarie** |
+| `hnw` | YU CGS · CP KB Valbury · SQ BCA · HP Henan Putihrai |
+| `scalper` | MG Semesta Indovest |
+| `retail` | XL Stockbit · XC Ajaib · YP Mirae Asset |
 
-IDX is a closed market: foreign and domestic net always sum to zero per (symbol, date), so domestic
-flow is simply `-latest_net`. No second call is needed.
+Sectors' own `cohort` field is **deliberately ignored** — it is a licensing category and labels YP
+(the largest retail book on IDX) and MG (a scalper desk) as "institutional". `is_foreign` *is* taken
+from the registry, cached to `reference/broker-registry.json`.
+
+> Note `RX`, not `MQ`. `MQ` is not a valid IDX member code.
+
+### Derived net foreign flow
+
+Summing `nval` over foreign brokers reproduces the official `/v2/foreign-flow/` figure **exactly** —
+verified on BBCA 2026-08-04 at Rp398,344,810,000 against the published board. So v3 gets both the
+foreign number and the cohort split from one call, which is why it costs *less* than v2.
+
+Broker codes absent from the registry are counted as domestic and listed in `unknown_brokers`, so a
+large unclassified flow can't silently distort the foreign figure.
+
+### Ticket size — the "stupid money" test
+
+`value_per_trade = (bval + sval) / (bfreq + sfreq)`, then divided by **that stock's own median**
+across brokers with `freq >= min_freq_for_median`.
+
+Relative, not absolute, on purpose: a fixed rupiah threshold breaks across price levels, because the
+same rupiah ticket is 128x the lots on a Rp50 stock as on a Rp6,400 one. On BBCA (median ~Rp38.5m):
+XL 0.43x, XC ~0.38x — retail lands near **0.4x**, institutions near **1.1x**, MG highest at 1.9x.
+
+This is a **diagnostic, not a classifier** — it cannot reproduce the four groups on its own (HNW
+overlaps institutional; MG has the largest tickets of all). Broker identity does the classifying;
+the ratio flags a broker acting out of character.
 
 ### Flow signals — these take precedence over the price/news ladder
 
 | Signal | Rule | Read |
 |---|---|---|
-| **Retail trap** | `latest_net < 0` **and** `inst_net < 0` **and** `retail_net > 0` | Foreigners and institutions selling while retail buys — the crowd is the exit liquidity |
-| **Smart money** | `latest_net > 0` **and** `inst_net > 0` | Foreign and institutional accumulation agree with the chatter |
-| **Distribution (flow)** | `run_direction == "out"` for ≥ `flow_trend_sessions` | Sustained foreign selling under cover of attention |
+| **Retail trap** | `inst < 0` **and** `retail > 0` | Institutions selling while retail buys — the crowd is the exit liquidity |
+| **Smart money** | `inst > 0` **and** `retail < 0` | Institutions accumulating while retail sells |
+| **Quiet accumulation** | institutional run ≥ `quiet_run_sessions` in, `abs(Δ1d) < up_pct` | Building a position before the price moves |
+| **Distribution (flow)** | institutional run `out` ≥ `flow_trend_sessions` | Sustained institutional selling under cover of attention |
+| **Scalper churn** | scalper gross ≥ `scalper_min_gross_idr` and `abs(net)/gross < scalper_flat_ratio` | Heavy fast money that nets out flat — activity, not positioning |
 
-Evaluated **before** Distribution / Confirmed / Extended / Anticipatory. A ticker with no flow data
-falls through to the price ladder exactly as in v2, and its Foreign cell shows "–".
+**HNW is shown but not required to agree.** It is only four brokers and is noisy; gating on it would
+have suppressed the largest institutional accumulation on the board (BBCA: inst +Rp322bn vs retail
+−Rp139bn, with HNW *selling* Rp81bn). The Flow cell shows all three legs so the disagreement stays
+visible even when the signal fires.
 
-**"Quiet accumulation" deliberately lives elsewhere.** Flow is only fetched for the *crowded*
-tickers, so a quiet name has no flow data here by construction. That bucket is produced by the
-morning brief's radar, which measures a wider shortlist — see
-`indonesia-morning-news-brief/scripts/build_radar.py`.
+**Scalper churn is evaluated last, on purpose.** "Churn" is the *absence* of a read, so it must
+never pre-empt one — evaluated earlier it masked MDKA's inst +Rp50.7bn on a −Rp0.1bn scalper net.
+
+Flow signals are evaluated **before** Distribution / Confirmed / Extended / Anticipatory. A ticker
+with no flow data falls through to the price ladder exactly as in v2, and its Flow cell shows "–".
 
 ### Cost
-`config.json → sectors`: `tier` (`lean` ~32 / `standard` ~50 / `deep` ~91 credits),
-`flow_top_n` tickers measured exactly, `cohort_top_n` also split by cohort. Calls are cached per
-trading session in a directory shared with the morning brief, so whichever runs second pays only
-for tickers the first did not fetch.
+`config.json → brokers`: `top_n` tickers get broker detail (1 credit each), `credit_ceiling` hard-
+stops the run rather than overrunning. Prices (`price_source: sectors`, `price_sectors_n`) cost 1
+credit per ticker for the top names; everything else falls back to Yahoo for free. Typical run
+~35 credits, against ~46–61 for v2. Calls are cached per trading session in a directory shared with
+the morning brief, so whichever runs second pays only for what the first did not fetch.

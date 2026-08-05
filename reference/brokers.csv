@@ -1,0 +1,41 @@
+code,group,name,note
+# ---------------------------------------------------------------------------
+# BEHAVIOURAL broker taxonomy — who is on each side of a trade.
+#
+# This is deliberately NOT the Sectors registry `cohort` field. That field is a
+# LICENSING category and gets the behaviour wrong where it matters: it calls YP
+# (Mirae, Indonesia's largest retail brokerage by accounts) and MG (Semesta, a
+# known scalper desk) "institutional". This file encodes market behaviour instead.
+#
+# groups:  institutional | hnw | scalper | retail
+# Any broker NOT listed here is bucketed as "other" and shown only in aggregate.
+#
+# `is_foreign` is NOT stored here — it is factual, comes from the Sectors broker
+# registry, and is cached to reference/broker-registry.json. Net foreign flow is
+# derived by summing every foreign broker's net, which reproduces the official
+# /foreign-flow/ figure exactly (verified on BBCA 2026-08-04: Rp398,344,810,000).
+#
+# To retune: edit a row, or move a code between groups. No code change needed.
+# ---------------------------------------------------------------------------
+
+# --- Institutional: real institutional order flow -------------------------
+BK,institutional,J.P. Morgan Sekuritas Indonesia,foreign
+AK,institutional,UBS Sekuritas Indonesia,foreign
+CC,institutional,Mandiri Sekuritas,domestic
+BB,institutional,Verdhana Sekuritas Indonesia,foreign
+KZ,institutional,CLSA Sekuritas Indonesia,foreign
+RX,institutional,Macquarie Sekuritas Indonesia,foreign — NOT "MQ"; MQ is not a valid IDX code
+
+# --- High net worth: large private money, often ahead of the tape ---------
+YU,hnw,CGS International Sekuritas Indonesia,foreign
+CP,hnw,KB Valbury Sekuritas,foreign
+SQ,hnw,BCA Sekuritas,domestic
+HP,hnw,Henan Putihrai Sekuritas,domestic
+
+# --- Scalper / swing: fast money, churn not conviction --------------------
+MG,scalper,Semesta Indovest Sekuritas,registry calls this "institutional" — it is not
+
+# --- Retail: app brokers, smallest tickets, usually the exit liquidity ----
+XL,retail,Stockbit Sekuritas Digital,
+XC,retail,Ajaib Sekuritas Asia,
+YP,retail,Mirae Asset Sekuritas Indonesia,registry calls this "institutional" — largest retail book on IDX

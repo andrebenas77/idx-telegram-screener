@@ -46,6 +46,51 @@ def session_closed(bar_ts, now=None):
     return (now.hour, now.minute) >= (16, 15)
 
 
+def compute_sectors(client, ticker, vol_win, end_date):
+    """Same metrics as compute(), from Sectors /daily/ instead of Yahoo.
+
+    One credit buys up to 90 days of close+volume, which is plenty for d1, d5 and a
+    20-day RVOL. Returns None on any shortfall so the caller can fall back to Yahoo.
+    """
+    end = end_date or datetime.now(WIB).strftime("%Y-%m-%d")
+    start = (datetime.strptime(end, "%Y-%m-%d") - timedelta(days=89)).strftime("%Y-%m-%d")
+    rows_raw = client.daily(ticker, start=start, end=end)
+    if not rows_raw:
+        return None
+
+    rows = sorted(
+        [(r.get("date"), r.get("close"), r.get("volume")) for r in rows_raw
+         if r.get("date") and r.get("close") is not None],
+        key=lambda r: r[0])
+
+    # Same guard as the Yahoo path: a bar stamped today is still forming until
+    # pre-closing ends at ~16:15 WIB, and would turn close/chg1d/rvol into an
+    # intraday snapshot rather than the completed session the board expects.
+    now = datetime.now(WIB)
+    if rows and rows[-1][0] == now.strftime("%Y-%m-%d") and (now.hour, now.minute) < (16, 15):
+        rows = rows[:-1]
+    if len(rows) < 2:
+        return None
+
+    last_d, last_c, last_v = rows[-1]
+    prev_c = rows[-2][1]
+    chg1d = (last_c / prev_c - 1) * 100 if prev_c else None
+    chg5d = (last_c / rows[-6][1] - 1) * 100 if len(rows) >= 6 and rows[-6][1] else None
+    recent_vols = [v for _, _, v in rows[-(vol_win + 1):-1] if v]
+    vol_avg = sum(recent_vols) / len(recent_vols) if recent_vols else None
+    rvol = (last_v / vol_avg) if (vol_avg and last_v) else None
+    return {
+        "close": round(float(last_c), 2),
+        "chg1d": round(chg1d, 2) if chg1d is not None else None,
+        "chg5d": round(chg5d, 2) if chg5d is not None else None,
+        "rvol": round(rvol, 2) if rvol is not None else None,
+        "vol": int(last_v) if last_v else None,
+        "currency": "IDR",
+        "price_date": last_d,
+        "source": "sectors",
+    }
+
+
 def compute(ticker, rng, vol_win):
     d = yahoo_chart(ticker + ".JK", rng)
     res = d["chart"]["result"][0]
@@ -110,20 +155,53 @@ def main():
     if not tickers:
         sys.exit(f"No tickers in {mp.name}.")
 
-    print(f"Fetching Yahoo .JK prices for {len(tickers)} tickers (range={rng})...")
-    prices, failed, price_date = {}, [], None
-    for t in tickers:
+    # Sectors is primary for the most-crowded names (1 credit each); Yahoo covers the
+    # tail for free and backstops any Sectors failure, so the price column can never
+    # go blank because of a vendor outage or an exhausted quota.
+    sectors_n = int(cfg.get("price_sectors_n", 0)) if cfg.get("price_source") == "sectors" else 0
+    client = None
+    if sectors_n:
         try:
-            row = compute(t, rng, vol_win)
-            if row is None:
-                failed.append(t)
-                continue
-            prices[t] = row
-            price_date = row["price_date"]
-        except Exception as e:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from sectors_client import SectorsClient  # noqa: PLC0415
+            client = SectorsClient(date=session_date)
+            if not client.enabled:
+                print("  [i] SECTORS_API_KEY not set — using Yahoo for everything")
+                client, sectors_n = None, 0
+        except Exception as e:                                   # noqa: BLE001
+            print(f"  [!!] Sectors client unavailable ({e}) — using Yahoo")
+            client, sectors_n = None, 0
+
+    print(f"Fetching prices for {len(tickers)} tickers "
+          f"(Sectors: top {sectors_n}, Yahoo: rest, range={rng})...")
+    prices, failed, price_date = {}, [], None
+    used = {"sectors": 0, "yahoo": 0}
+
+    for i, t in enumerate(tickers):
+        row = None
+        if client and i < sectors_n:
+            try:
+                row = compute_sectors(client, t, vol_win, args.date or session_date)
+            except Exception as e:                               # noqa: BLE001
+                print(f"  [i] {t}: Sectors failed ({type(e).__name__}) — trying Yahoo")
+            if row is None and t not in failed:
+                print(f"  [i] {t}: no Sectors data — falling back to Yahoo")
+
+        if row is None:
+            try:
+                row = compute(t, rng, vol_win)
+                if row is not None:
+                    row["source"] = "yahoo"
+            except Exception as e:                               # noqa: BLE001
+                print(f"  [!!] {t}: {type(e).__name__} {e}")
+            time.sleep(0.12)  # be polite to Yahoo
+
+        if row is None:
             failed.append(t)
-            print(f"  [!!] {t}: {type(e).__name__} {e}")
-        time.sleep(0.12)  # be polite to Yahoo
+            continue
+        prices[t] = row
+        used[row.get("source", "yahoo")] += 1
+        price_date = row["price_date"]
 
     out = {
         "date": session_date,
@@ -133,13 +211,18 @@ def main():
         "vol_avg_window": vol_win,
         "prices": prices,
         "failed": failed,
+        "sources": used,
     }
+    if client:
+        out["sectors_credits"] = client.credits
     BUILD.mkdir(exist_ok=True)
     outp = BUILD / f"prices-{session_date}.json"
     outp.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print(f"\nGot prices for {len(prices)}/{len(tickers)} tickers "
           f"(last close {price_date}). Failed: {', '.join(failed) or 'none'}")
+    print(f"  source: {used['sectors']} sectors"
+          f"{f' ({client.credits} credits)' if client else ''}, {used['yahoo']} yahoo")
     print(f"  {'TICKER':<8}{'CLOSE':>10}{'1d%':>8}{'5d%':>8}{'RVOL':>7}")
     for t in tickers[:15]:
         p = prices.get(t)

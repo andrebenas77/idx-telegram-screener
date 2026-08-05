@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""Assemble the daily IDX foreign-flow picture from the Sectors API.
+"""DEPRECATED (v3) — superseded by scripts/fetch_brokers.py.
+
+fetch_brokers.py gets the same net foreign figure from /v2/broker-summary/ by summing
+the foreign brokers' net, which reproduces this script's /v2/foreign-flow/ output
+EXACTLY (verified on BBCA 2026-08-04: Rp398,344,810,000) — while also returning the
+behavioural cohort split, ticket sizes and 14 days of history, for fewer credits.
+
+build_screener.py prefers brokers-<date>.json and only falls back to flows-<date>.json
+if it is missing. `reference/config.json → sectors.enabled` is now false. This file is
+kept for one release so a bad v3 run has somewhere to fall back to; delete it after
+v3 has run clean for a couple of weeks.
+
+Assemble the daily IDX foreign-flow picture from the Sectors API.
 
 There is no market-wide "foreign flow by ticker" endpoint — /v2/foreign-flow/ is
 per-symbol only, and covering the whole exchange would be ~900 calls a day. So this

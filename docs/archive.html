@@ -80,6 +80,8 @@
   .sig-trap{background:rgba(248,113,113,.24);color:#fca5a5;font-weight:800}
   .sig-smart{background:rgba(52,211,153,.22);color:#6ee7b7;font-weight:800}
   .sig-fdist{background:rgba(251,146,60,.20);color:#fdba74;font-weight:700}
+  .sig-quiet{background:rgba(129,140,248,.22);color:#a5b4fc;font-weight:800}
+  .sig-churn{background:rgba(148,163,184,.18);color:#cbd5e1;font-weight:600}
   .newsdot{color:var(--accent2);font-size:11px;white-space:nowrap}
   .nw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
   .nw-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
@@ -104,23 +106,29 @@
 <li><a href="archive/2026-07-24.html">2026-07-24</a></li></ul></section>
   <header>
     <h1><span class="dot">●</span> IDX Telegram Screener</h1>
-    <div class="meta">Archive &nbsp;·&nbsp; built 2026-08-05 06:05 WIB &nbsp;·&nbsp; <a href="index.html">Archive</a></div>
+    <div class="meta">Archive &nbsp;·&nbsp; built 2026-08-05 10:16 WIB &nbsp;·&nbsp; <a href="index.html">Archive</a></div>
   </header>
   <div class="stats"><b>7 daily screens</b></div>
   <div class="legend">Crowd = recency-weighted posts (4-session half-life) × channel breadth × share of chatter.
     Δ1d/Δ5d = price change · RVOL = volume vs 20-day avg (bold when hot). <b>Signal:</b> Confirmed = crowded+up+news/vol (sell-on-news risk) ·
     Distribution = crowded+down on volume · Extended = big 5-day run · Anticipatory = crowded, quiet price, no news yet.
     Prices are the <b>previous close</b>.<br>
-    <b>Foreign</b> = exact net foreign flow (IDR) for the session, with the institutional net beneath it.
-    Flow signals override the price ladder: <b>Retail trap</b> = foreign and institutions selling while retail buys ·
-    <b>Smart money</b> = foreign and institutions both accumulating · <b>Distribution (flow)</b> = sustained foreign selling.</div>
+    <b>Flow</b> = net foreign (IDR) for the session, with the behavioural split beneath it —
+    <b>inst</b> (JP Morgan, UBS, Mandiri, Verdhana, CLSA, Macquarie) · <b>hnw</b> (CGS, KB Valbury, BCA, Henan) ·
+    <b>ret</b> (Stockbit, Ajaib, Mirae). Derived per-broker, so net foreign and the split come from the same tape.
+    Flow signals override the price ladder: <b>Retail trap</b> = institutions selling while retail buys ·
+    <b>Smart money</b> = institutions accumulating while retail sells (HNW is shown for context but not
+    required to agree — it is only four brokers and is noisy) ·
+    <b>Quiet accumulation</b> = institutions buying 3+ sessions with the price still flat ·
+    <b>Scalper churn</b> = heavy fast-money turnover that nets out flat (activity, not positioning) ·
+    <b>Distribution (flow)</b> = sustained institutional selling.</div>
 
   <h2><span class="ic"></span>Most Crowded Now <span class="sub">where the herd is + is it already moving?</span></h2>
   <div class="panel">
     <table>
       <thead><tr>
         <th>#</th><th>Ticker</th><th>Company</th><th>Crowd</th><th>Posts</th>
-        <th>Δ1d</th><th>Δ5d</th><th>RVOL</th><th>Foreign</th><th>Signal</th><th>News</th><th>10-session</th>
+        <th>Δ1d</th><th>Δ5d</th><th>RVOL</th><th>Flow</th><th>Signal</th><th>News</th><th>10-session</th>
       </tr></thead>
       <tbody></tbody>
     </table>

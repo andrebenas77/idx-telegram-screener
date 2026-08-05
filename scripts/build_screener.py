@@ -134,6 +134,14 @@ def main():
     EXT = cfg.get("ext_pct", 15.0)
     SEC = cfg.get("sectors", {})
     FLOW_RUN = SEC.get("flow_trend_sessions", 3)
+    BRK = cfg.get("brokers", {})
+    # Consecutive sessions of institutional buying before "quiet accumulation" fires.
+    QUIET_RUN = BRK.get("quiet_run_sessions", 3)
+    # Scalper churn: |net| under this share of the desk's own gross turnover means it
+    # traded heavily and ended flat — activity without positioning.
+    SCALP_FLAT = BRK.get("scalper_flat_ratio", 0.15)
+    # ...but only call it churn when the turnover is big enough to matter (IDR).
+    SCALP_MIN = BRK.get("scalper_min_gross_idr", 5_000_000_000)
     meta = load_tickers()
     rows = load_history()
 
@@ -150,11 +158,40 @@ def main():
     price_date = pdata.get("price_date")
     news = load_build_json("news", today).get("news", {})
 
-    # v3: exact net foreign flow + retail/institutional cohort split (Sectors API).
-    # Keyed by the trading session, which is what history.csv dates already are.
-    fdata = load_build_json("flows", today)
-    flows = (fdata.get("tickers") or {}) if fdata.get("available") else {}
-    flow_session = fdata.get("date")
+    # v3: per-broker cohort flow. brokers-<date>.json is preferred — it carries the
+    # behavioural split (institutional / hnw / scalper / retail) AND a net foreign
+    # figure derived from the same payload, which reproduces /foreign-flow/ exactly.
+    # flows-<date>.json is the deprecated v2 shape, kept as a fallback for one release.
+    bdata = load_build_json("brokers", today)
+    flows, flow_session = {}, None
+    if bdata.get("available"):
+        flow_session = bdata.get("date")
+        for sym, t in (bdata.get("tickers") or {}).items():
+            g = t.get("groups") or {}
+            def grp(name, field="net_idr"):
+                return (g.get(name) or {}).get(field)
+            flows[sym] = {
+                "latest_net": t.get("net_foreign_idr"),
+                "inst_net": grp("institutional"),
+                "hnw_net": grp("hnw"),
+                "scalper_net": grp("scalper"),
+                "retail_net": grp("retail"),
+                "inst_run": grp("institutional", "run_sessions") or 0,
+                "inst_dir": grp("institutional", "run_direction"),
+                "run_sessions": grp("institutional", "run_sessions") or 0,
+                "run_direction": grp("institutional", "run_direction"),
+                "retail_ratio": grp("retail", "ticket_ratio"),
+                "scalper_ratio": grp("scalper", "ticket_ratio"),
+                # Gross turnover lets us tell churn (trades a lot, ends flat) from
+                # conviction (trades a lot, ends heavily one way).
+                "scalper_gross": (grp("scalper", "buy_idr") or 0)
+                                 + (grp("scalper", "sell_idr") or 0),
+                "anomalies": t.get("anomalies") or [],
+            }
+    else:
+        fdata = load_build_json("flows", today)
+        flows = (fdata.get("tickers") or {}) if fdata.get("available") else {}
+        flow_session = fdata.get("date")
 
     def age(d):
         return last_i - idx_asc[d]
@@ -298,35 +335,71 @@ def main():
         return f'<span class="rv{hot}">{v:.1f}x</span>'
 
     def flow_cell(r):
+        """Net foreign on top, the behavioural split beneath it.
+
+        The split is the point of v3: net foreign alone can't distinguish an
+        institution accumulating from a foreign-domiciled retail broker being sold.
+        """
         f = r.get("flow") or {}
         net = f.get("latest_net")
         if net is None:
             return '<span class="mut">–</span>'
         cls = "up" if net > 0 else ("down" if net < 0 else "flat")
+
         bits = []
-        run, direction = f.get("run_sessions"), f.get("run_direction")
-        if run and direction in ("in", "out"):
-            bits.append(f"{run}s {direction}")
-        if f.get("inst_net") is not None:
-            bits.append(f"inst {fmt_idr(f['inst_net'])}")
+        for label, key in (("inst", "inst_net"), ("hnw", "hnw_net"), ("ret", "retail_net")):
+            v = f.get(key)
+            if v:
+                bits.append(f"{label} {fmt_idr(v)}")
+        run, direction = f.get("inst_run"), f.get("inst_dir")
+        if run and run >= 2 and direction in ("in", "out"):
+            bits.append(f"inst {run}s {direction}")
+
         sub = f'<span class="sub">{esc(" · ".join(bits))}</span>' if bits else ""
         return f'<span class="{cls}">{esc(fmt_idr(net))}</span>{sub}'
 
     def flow_signal_of(r):
         """Flow beats price. Chatter measures retail attention; this asks who is on the
         other side of it. Returns ("", "") when no flow data was fetched for the ticker.
+
+        Order matters: the two-sided reads (trap / smart money) are the highest-
+        conviction because they require the cohorts to disagree, so they win.
         """
         f = r.get("flow") or {}
-        net, inst, retail = f.get("latest_net"), f.get("inst_net"), f.get("retail_net")
+        net = f.get("latest_net")
         if net is None:
             return ("", "")
-        run, direction = (f.get("run_sessions") or 0), f.get("run_direction")
-        if net < 0 and inst is not None and inst < 0 and retail is not None and retail > 0:
+        inst, hnw, retail = f.get("inst_net"), f.get("hnw_net"), f.get("retail_net")
+        run, direction = (f.get("inst_run") or 0), f.get("inst_dir")
+
+        big = inst is not None and retail is not None
+
+        # Professionals on one side, retail on the other — the strongest divergence,
+        # so it outranks everything else. HNW is NOT required to agree: it is only 4
+        # brokers and is noisy, and gating on it would have hidden the largest
+        # institutional accumulation on the board (BBCA, inst +Rp322bn vs retail
+        # -Rp139bn, with HNW selling). The cell shows the HNW leg so the nuance is
+        # still visible even when the signal fires.
+        if big and inst < 0 and retail > 0:
             return ("Retail trap", "sig-trap")
-        if net > 0 and inst is not None and inst > 0:
+        if big and inst > 0 and retail < 0:
             return ("Smart money", "sig-smart")
+
+        # Institutions quietly building while the price hasn't moved yet.
+        c = r.get("chg1d")
+        if run >= QUIET_RUN and direction == "in" and c is not None and abs(c) < UP:
+            return ("Quiet accumulation", "sig-quiet")
+
         if direction == "out" and run >= FLOW_RUN:
             return ("Distribution (flow)", "sig-fdist")
+
+        # LAST on purpose. "Churn" means heavy turnover that nets out flat — i.e.
+        # activity without positioning. It is the absence of a read, so it must never
+        # pre-empt one: evaluated earlier it masked MDKA's inst +Rp50.7bn on a
+        # -Rp0.1bn scalper net.
+        gross, snet = f.get("scalper_gross") or 0, f.get("scalper_net") or 0
+        if gross >= SCALP_MIN and abs(snet) / gross < SCALP_FLAT:
+            return ("Scalper churn", "sig-churn")
         return ("", "")
 
     def signal_of(r):
@@ -441,9 +514,12 @@ def main():
     if msgs_scanned is not None:
         stat_bits.append(f"{msgs_scanned} messages scanned")
     if price_date:
-        stat_bits.append(f"prices @ close {price_date}")
+        src = pdata.get("sources") or {}
+        tag = (f" ({src.get('sectors', 0)} sectors / {src.get('yahoo', 0)} yahoo)"
+               if src else "")
+        stat_bits.append(f"prices @ close {price_date}{tag}")
     if flow_session:
-        stat_bits.append(f"foreign flow @ {flow_session} ({len(flows)} tickers)")
+        stat_bits.append(f"broker flow @ {flow_session} ({len(flows)} tickers)")
     page = (template
             .replace("{{DATE}}", esc(today))
             .replace("{{GENERATED}}", esc(gen))
@@ -491,11 +567,11 @@ def main():
           f"News: {sum(len(v) for v in news.values())} items on {len(news)} tickers")
     if flows:
         flagged = [(r["ticker"], signal_of(r)[0]) for r in crowded if flow_signal_of(r)[0]]
-        print(f"  Foreign flow: {len(flows)} tickers @ {flow_session or 'n/a'}"
+        print(f"  Broker flow: {len(flows)} tickers @ {flow_session or 'n/a'}"
               + (f" | flow signals: " + ", ".join(f"{t} ({s})" for t, s in flagged)
                  if flagged else " | no flow signals triggered"))
     else:
-        print("  Foreign flow: none (run scripts/fetch_flows.py, or check SECTORS_API_KEY)")
+        print("  Broker flow: none (run scripts/fetch_brokers.py, or check SECTORS_API_KEY)")
 
 
 if __name__ == "__main__":

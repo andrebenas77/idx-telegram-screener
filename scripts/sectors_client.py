@@ -218,6 +218,36 @@ class SectorsClient:
         return self.get(f"/foreign-flow/{strip_jk(symbol)}/",
                         {"start": start, "end": end}, credits=1)
 
+    def brokers(self):
+        """Exchange-member registry: code, name, is_foreign, cohort, license_type.
+
+        `is_foreign` is the authoritative input for derived net foreign flow.
+        `cohort` is a LICENSING label and is deliberately unused — it calls YP and MG
+        institutional, which is wrong behaviourally (see reference/brokers.csv).
+        """
+        return self.get("/brokers/", None, credits=1)
+
+    def broker_summary(self, symbol: str, start: str | None = None,
+                       end: str | None = None, broker_code: str | None = None):
+        """EVERY broker's buy/sell/net/lots/freq for one ticker, grouped by day.
+
+        Window capped at 14 days by the API. One credit returns the entire book, which
+        is what makes both the cohort split and the derived foreign flow affordable —
+        summing the foreign brokers' `nval` reproduces /foreign-flow/ exactly.
+        """
+        return self.get(f"/broker-summary/{strip_jk(symbol)}/",
+                        {"start": start, "end": end, "broker_code": broker_code},
+                        credits=1)
+
+    def daily(self, symbol: str, start: str | None = None, end: str | None = None):
+        """Daily close, volume and market cap. Window capped at 90 days by the API.
+
+        The price source for v3 — one credit covers enough history for Δ1d, Δ5d and
+        a 20-day RVOL, so it replaces the per-ticker Yahoo pull.
+        """
+        return self.get(f"/daily/{strip_jk(symbol)}/",
+                        {"start": start, "end": end}, credits=1)
+
     def top_brokers(self, date: str | None = None, metric: str = "net",
                     origin: str = "all", cohort: str = "all",
                     n_brokers: int | None = None):
