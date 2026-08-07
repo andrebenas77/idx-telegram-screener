@@ -15,6 +15,19 @@ reference/channels.txt
 # Working intermediates — regenerated every run (published output lives in docs/)
 build/
 
+# Licensed vendor data. This repo is PUBLIC and serves GitHub Pages; Invezgo tick data is
+# a paid feed, and republishing it verbatim would redistribute someone else's licensed
+# product. Derived signals (scores, flags, aggregates) are fine to publish — the raw tape
+# is not. Keep the archive local, or move it to a private repo if it needs backing up.
+data/tape/
+
+# Same reasoning, different shape: the backfilled panel is ~7.6 MB of per-broker daily
+# net flow derived from Invezgo's inventory-chart feed. It is much closer to their raw
+# product than to a derived signal, so it stays out of a public repo. It is also
+# reproducible — `py scripts/backfill_panel.py` rebuilds it in ~113 requests — so there
+# is nothing here that needs versioning.
+data/panel/
+
 # Python
 __pycache__/
 *.pyc

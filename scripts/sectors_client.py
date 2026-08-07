@@ -45,6 +45,8 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 BASE = "https://api.sectors.app/v2"
+# Used only by corporate_actions(): the REST surface has no such path.
+MCP_URL = "https://sectors-mcp.supertype.ai/mcp"
 
 # Lives outside both skill repos so neither publishes it to GitHub Pages.
 DEFAULT_CACHE = Path(r"C:\Users\ASUS\Documents\claude code\.sectors-cache")
@@ -247,6 +249,72 @@ class SectorsClient:
         """
         return self.get(f"/daily/{strip_jk(symbol)}/",
                         {"start": start, "end": end}, credits=1)
+
+    def index_daily(self, index_code: str = "ihsg", start: str | None = None,
+                    end: str | None = None):
+        """Daily index close. `ihsg` is the market-adjustment baseline for the Broker
+        Alpha backtest — raw returns would just rank brokers by beta. 90-day cap, so
+        long histories are chained."""
+        return self.get(f"/index-daily/{index_code.lower()}/",
+                        {"start": start, "end": end}, credits=1)
+
+    def corporate_actions(self, symbol: str):
+        """Splits, bonus, rights and dividends — the price-adjustment inputs.
+
+        Routed over the MCP JSON-RPC endpoint rather than REST: the REST host works
+        fine (verified 200 on /daily/ and /index-daily/ with the raw key) but exposes
+        no corporate-actions path — every variant tried returns a JSON 404 "endpoint
+        does not exist". The MCP tool returns it correctly, so this one method takes a
+        different transport. Cached like any other call.
+
+        This matters because Invezgo prices are RAW: an unadjusted 10:1 split reads as
+        a -90% day and would poison any forward-return study.
+        """
+        sym = strip_jk(symbol)
+        ck = self._key("/mcp/corporate-actions/", {"symbol": sym})
+        if self.use_cache and ck in self._cache:
+            self.cache_hits += 1
+            return self._cache[ck]
+        if not self.enabled:
+            self.errors.append("SECTORS_API_KEY not set")
+            return None
+
+        import re as _re
+        payload = {
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "fetch-corporate-actions", "arguments": {"symbol": sym}},
+        }
+        headers = {
+            # MCP wants Bearer; the REST surface above refuses it. Opposite conventions
+            # on the same vendor — see the module docstring.
+            "Authorization": f"Bearer {self.key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "User-Agent": "idx-telegram-screener/4.0",
+        }
+        for attempt in range(RETRIES + 1):
+            try:
+                r = requests.post(MCP_URL, headers=headers, json=payload,
+                                  timeout=TIMEOUT)
+                if r.status_code == 200:
+                    # Reply is SSE-framed: "event: message\ndata: {json}"
+                    m = _re.search(r"^data:\s*(.+)$", r.text, _re.M)
+                    env = json.loads(m.group(1) if m else r.text)
+                    data = json.loads(env["result"]["content"][0]["text"])
+                    self.credits += 1
+                    if self.use_cache:
+                        self._cache[ck] = data
+                        self._save_cache()
+                    return data
+                last = f"HTTP {r.status_code} {r.text[:120]}"
+            except Exception as e:
+                last = f"{type(e).__name__}: {e}"
+            if attempt < RETRIES:
+                time.sleep(1.5 * (attempt + 1))
+        msg = f"corporate_actions({sym}) failed — {last}"
+        self._log(msg)
+        self.errors.append(msg)
+        return None
 
     def top_brokers(self, date: str | None = None, metric: str = "net",
                     origin: str = "all", cohort: str = "all",

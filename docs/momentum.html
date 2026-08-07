@@ -1,0 +1,77 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IDX Momentum Accumulation — 2026-08-06</title><style>
+:root{--bg:#0e1116;--card:#161b22;--line:#242c37;--tx:#e6edf3;--dim:#8b949e;
+--ok:#3fb950;--bad:#f85149;--acc:#58a6ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);
+font:15px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:32px 20px 64px}
+h1{font-size:26px;margin:0 0 4px}h2{font-size:18px;margin:34px 0 6px}
+.sub{color:var(--dim);font-size:13px;margin:0 0 6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+padding:16px 18px;margin:14px 0}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;color:var(--dim);font-weight:600;padding:8px 10px;
+border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+.tk{font-weight:700;color:var(--acc)}.num{text-align:right;font-variant-numeric:tabular-nums}
+.bks{color:var(--dim);font-size:12px}
+.bk{display:inline-block;margin-right:8px}.bk.good{color:var(--ok);font-weight:600}
+.none{color:var(--dim);font-style:italic;margin:8px 0}
+.dimtx{color:var(--dim)}
+.up{color:var(--ok)}.dn{color:var(--bad)}.mid{color:var(--dim)}
+.tr{font-weight:600;font-size:12px;letter-spacing:.02em}
+.brk{color:var(--acc);font-size:10px}
+.warn{border-left:3px solid var(--bad)}
+.note{color:var(--dim);font-size:12.5px;margin:8px 0 0}
+.ev{font-size:12.5px;color:var(--dim);margin-top:6px}
+.ev b{color:var(--tx)}
+.scroll{overflow-x:auto}
+@media(max-width:640px){.wrap{padding:20px 12px}}
+</style></head><body><div class="wrap">
+<h1>IDX Momentum Accumulation</h1>
+<p class="sub">Session 2026-08-06 &middot; generated 2026-08-07 07:12 &middot;
+6 candidates, 0 exhaustion warnings</p>
+<div class="card ev">
+<b>What this board is.</b> Brokers accumulating meaningfully (&ge;Rp500m and &ge;10% of
+20-day ADTV, buying on &ge;2 of the last 3 sessions) in names that are <b>already
+moving</b> &mdash; RVOL 1.5&ndash;3.0, within 10% of the 60-day high, RSI &ge; 55.
+Walk-forward tested: <b>+0.96% (3d) / +1.40% (5d)</b> mean excess over the accumulation
+baseline, positive in <b>4 of 4</b> sub-periods.<br>
+<b>What it is not.</b> The original &ldquo;buy them while they&rsquo;re quiet&rdquo;
+thesis was tested and failed &mdash; lift of &minus;0.04% / +0.01%, indistinguishable
+from zero. Coiled and oversold setups are deliberately absent.<br>
+<b>Broker quality tilts the ranking; it never gates it.</b> Broker skill survived
+walk-forward only when ranked on mean excess, and only by ~2&ndash;3%.
+Green brokers are top-quintile. Returns are gross of costs.
+</div>
+<div class="card ev">
+<b>Reading the price columns.</b> All prices are the <b>last completed session</b> &mdash;
+this runs before the open, so there is no &ldquo;today&rdquo; yet.
+<b>Trend</b> is <span class="tr up">HH/HL</span> when the last session made both a higher
+high and a higher low, <span class="tr dn">LH/LL</span> when it made neither, mixed
+otherwise; <span class="brk">&#9650;</span> marks a close above the prior 5-session high.
+<b>CLV</b> is where the close sat in the session&rsquo;s range &mdash; 100% is a close on
+the high, 0% sold into the low. <b>CMF</b> is 20-session Chaikin Money Flow: positive
+means volume transacted on strength, negative on weakness.<br>
+These three are <b>read-outs, not filters</b> &mdash; nothing is excluded from the board
+because of them. Note CMF <i>infers</i> from where each close sat in its range; it is not
+a true volume-at-price profile, which would need intraday data unavailable before the
+open. A session that opened weak, rallied and closed strong scores as accumulation even
+if most volume changed hands near the low.
+</div>
+
+<h2>Tier A &mdash; liquid (top 50 by ADTV)</h2>
+<p class="sub">Exitable in size.</p>
+<div class="card scroll"><table><thead><tr><th>Ticker</th><th>Close</th><th>Last H / L</th><th>Prior H / L</th><th>5-sess H / L</th><th>Trend</th><th title="where the close sat in the session range">CLV</th><th title="Chaikin Money Flow, 20 sessions">CMF</th><th>Net accum</th><th>%ADTV</th><th>RVOL</th><th>RSI</th><th>Brokers accumulating</th></tr></thead><tbody><tr><td class="tk">ERAA</td><td class="num">456</td><td class="num">468<span class="dimtx"> / </span>446</td><td class="num">468<span class="dimtx"> / </span>454</td><td class="num">468<span class="dimtx"> / </span>414</td><td><span class="tr dn">LH/LL</span></td><td class="num">45%</td><td class="num"><span class="up">+0.05</span></td><td class="num">11.1B</td><td class="num">34%</td><td class="num">1.76</td><td class="num">82</td><td class="bks"><span class="bk good" title="rank 7 of 45, 2066 events">BK 7.0B</span>, <span class="bk" title="rank 16 of 45, 582 events">KI 4.1B</span></td></tr><tr><td class="tk">TINS</td><td class="num">3,800</td><td class="num">3,950<span class="dimtx"> / </span>3,780</td><td class="num">4,000<span class="dimtx"> / </span>3,860</td><td class="num">4,000<span class="dimtx"> / </span>3,590</td><td><span class="tr dn">LH/LL</span></td><td class="num">12%</td><td class="num"><span class="dn">-0.23</span></td><td class="num">44.0B</td><td class="num">25%</td><td class="num">1.56</td><td class="num">61</td><td class="bks"><span class="bk good" title="rank 6 of 45, 45 events">AG 44.0B</span></td></tr><tr><td class="tk">GGRM</td><td class="num">20,600</td><td class="num">21,200<span class="dimtx"> / </span>20,450</td><td class="num">20,950<span class="dimtx"> / </span>20,300</td><td class="num">21,200<span class="dimtx"> / </span>18,100</td><td><span class="tr up">HH/HL</span></td><td class="num">20%</td><td class="num"><span class="up">+0.18</span></td><td class="num">6.9B</td><td class="num">23%</td><td class="num">1.62</td><td class="num">85</td><td class="bks"><span class="bk" title="rank 21 of 45, 1385 events">BB 6.9B</span></td></tr></tbody></table></div>
+
+<h2>Tier B &mdash; second-liners</h2>
+<p class="sub">Larger edge historically, but liquidity disappears exactly when you need it.</p>
+<div class="card scroll"><table><thead><tr><th>Ticker</th><th>Close</th><th>Last H / L</th><th>Prior H / L</th><th>5-sess H / L</th><th>Trend</th><th title="where the close sat in the session range">CLV</th><th title="Chaikin Money Flow, 20 sessions">CMF</th><th>Net accum</th><th>%ADTV</th><th>RVOL</th><th>RSI</th><th>Brokers accumulating</th></tr></thead><tbody><tr><td class="tk">INTP</td><td class="num">5,325</td><td class="num">5,400<span class="dimtx"> / </span>5,300</td><td class="num">5,375<span class="dimtx"> / </span>4,970</td><td class="num">5,400<span class="dimtx"> / </span>4,600</td><td><span class="tr up">HH/HL</span></td><td class="num">25%</td><td class="num"><span class="up">+0.22</span></td><td class="num">5.3B</td><td class="num">75%</td><td class="num">2.06</td><td class="num">81</td><td class="bks"><span class="bk" title="rank 31 of 45, 750 events">RX 3.2B</span>, <span class="bk" title="rank 19 of 45, 3721 events">AK 2.1B</span></td></tr><tr><td class="tk">CMRY</td><td class="num">4,660</td><td class="num">4,810<span class="dimtx"> / </span>4,660</td><td class="num">4,800<span class="dimtx"> / </span>4,600</td><td class="num">4,810<span class="dimtx"> / </span>4,550</td><td><span class="tr up">HH/HL</span></td><td class="num">0%</td><td class="num"><span class="dn">-0.16</span></td><td class="num">4.9B</td><td class="num">66%</td><td class="num">1.61</td><td class="num">61</td><td class="bks"><span class="bk good" title="rank 8 of 45, 3905 events">CC 3.7B</span>, <span class="bk good" title="rank 4 of 45, 114 events">AO 1.3B</span></td></tr><tr><td class="tk">ACES</td><td class="num">362</td><td class="num">364<span class="dimtx"> / </span>358</td><td class="num">366<span class="dimtx"> / </span>350</td><td class="num">366<span class="dimtx"> / </span>348</td><td><span class="tr mid">mixed</span></td><td class="num">67%</td><td class="num"><span class="up">+0.25</span></td><td class="num">801M</td><td class="num">15%</td><td class="num">1.51</td><td class="num">60</td><td class="bks"><span class="bk" title="rank 16 of 45, 582 events">KI 801M</span></td></tr></tbody></table></div>
+
+<h2>Exhaustion &mdash; avoid / exit</h2>
+<p class="sub">Same accumulation, but RVOL &ge; 3.0.</p>
+<div class="card warn scroll"><p class="none">No exhaustion signals this session.</p>
+<p class="note">Blow-off volume inverted the edge in testing: &minus;1.85% (3d) /
+&minus;3.82% (5d) lift, with a 5-day hit rate of 19%. Heavy accumulation here reads as
+distribution into strength, not continuation.</p></div>
+</div></body></html>

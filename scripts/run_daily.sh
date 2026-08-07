@@ -93,6 +93,39 @@ END=$(date +%s)
 DUR=$((END - START))
 log "claude exited ${CODE} after ${DUR}s"
 
+# ---------------------------------------------------------------------------
+# Momentum board.
+#
+# Deliberately OUTSIDE the claude step and guarded separately: it is deterministic
+# Python with no model in the loop, so a claude failure must not cost us the board,
+# and a board failure must not suppress the crowded-board summary. Both feed one
+# message at the end.
+#
+# The refresh REFUSES to write when a corporate action lands inside its window —
+# back-adjustment anchors on the newest date, so rescaling only the refreshed slice
+# would leave a silent discontinuity against the untouched history. That is a
+# non-zero exit, and the right response is a full rebuild, not a retry.
+# ---------------------------------------------------------------------------
+MOM_SUMMARY=""
+MOM_OK=false
+set +e
+python3 "${ROOT}/scripts/backfill_panel.py" --incremental --window 90 >>"$LOG" 2>&1
+REFRESH_CODE=$?
+if [[ $REFRESH_CODE -ne 0 ]]; then
+    log "[!!] panel refresh exited ${REFRESH_CODE} — likely a corporate action in the window"
+    log "     fix: py scripts/backfill_panel.py --refresh-actions"
+else
+    # Page first, summary second: a summary that linked to a page which failed to
+    # rebuild would point at yesterday's board while reading as today's.
+    if python3 "${ROOT}/scripts/build_momentum_board.py" >>"$LOG" 2>&1; then
+        MOM_SUMMARY="$(python3 "${ROOT}/scripts/build_momentum_board.py" --summary \
+                        2>>"$LOG")"
+        [[ -n "$MOM_SUMMARY" ]] && MOM_OK=true
+    fi
+fi
+set -e
+$MOM_OK && log "momentum board built" || log "[!!] momentum board NOT built"
+
 # --output-format json wraps the reply; fall back to raw output if it isn't JSON
 # (e.g. an auth error printed as plain text).
 SUMMARY="$(printf '%s' "$OUT" | jq -r '.result // empty' 2>/dev/null || true)"
@@ -149,6 +182,16 @@ fi
 [[ -s "${ROOT}/build/prices-${DATE}.json" ]]  || WARN+=("no price data for ${DATE}")
 [[ -s "${ROOT}/build/brokers-${DATE}.json" ]] || WARN+=("no broker-flow data for ${DATE}")
 
+# 6. The momentum board is a separate deliverable and gets the same "did it actually
+#    rebuild" treatment as the crowded board — an unchanged file at 07:00 looks
+#    identical to a good run otherwise. WARN not FATAL: the crowded board is still
+#    worth delivering on its own.
+if ! $MOM_OK; then
+    WARN+=("momentum board not rebuilt — see the log")
+elif ! grep -q "session " "${ROOT}/docs/momentum.html" 2>/dev/null; then
+    WARN+=("docs/momentum.html has no session line — it may be stale")
+fi
+
 for w in ${WARN[@]+"${WARN[@]}"};  do log "[warn] $w"; done
 for f in ${FATAL[@]+"${FATAL[@]}"}; do log "[!!] $f"; done
 
@@ -183,11 +226,20 @@ Warnings:
 $(printf -- '- %s\n' "${WARN[@]}")"
 fi
 
+MOMTEXT=""
+if [[ -n "$MOM_SUMMARY" ]]; then
+    MOMTEXT="
+
+------------------------------
+${MOM_SUMMARY}"
+fi
+
 if $OK; then
+    # One message carrying both boards, not two notifications.
     notify --title "IDX screener — ${DATE}" \
            --text "${SUMMARY}
 
-Board: ${SITE}${WARNTEXT}"
+Board: ${SITE}${MOMTEXT}${WARNTEXT}"
     log "=== run ok ==="
 else
     REASON=""
