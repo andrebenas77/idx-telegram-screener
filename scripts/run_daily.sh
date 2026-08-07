@@ -129,6 +129,24 @@ else
         MOM_SUMMARY="$(python3 "${ROOT}/scripts/build_momentum_board.py" --summary \
                         2>>"$LOG")"
         [[ -n "$MOM_SUMMARY" ]] && MOM_OK=true
+
+        # Publish it. The claude step commits and pushes the crowded board BEFORE this
+        # block runs, so without an explicit publish here docs/momentum.html is
+        # regenerated after that push and never reaches Pages — the site would serve a
+        # stale board while the Telegram summary described today's. Same standing
+        # authorization to push as the crowded board: nobody is at the keyboard at 07:00.
+        if [[ -n "$(git status --porcelain docs/momentum.html)" ]]; then
+            if git add docs/momentum.html \
+               && git commit -q -m "Momentum board ${DATE}" >>"$LOG" 2>&1 \
+               && git push -q origin main >>"$LOG" 2>&1; then
+                log "momentum board published"
+            else
+                log "[!!] momentum board built but NOT published"
+                MOM_OK=false
+            fi
+        else
+            log "momentum board unchanged — nothing to publish"
+        fi
     fi
 fi
 set -e
