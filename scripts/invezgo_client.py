@@ -58,8 +58,12 @@ for _stream in (sys.stdout, sys.stderr):
 
 BASE = "https://api.invezgo.com"
 
-# Lives outside both skill repos so neither publishes it to GitHub Pages.
-DEFAULT_CACHE = Path(r"C:\Users\ASUS\Documents\claude code\.invezgo-cache")
+# Lives outside the skill repo so it is never published to GitHub Pages.
+# Platform-split on purpose: a Windows path on Linux does not fail, it silently creates
+# a directory literally named `C:\Users\...` in the working directory — which on the VPS
+# means the cache never persists between runs and every call is paid for twice.
+DEFAULT_CACHE = (Path(r"C:\Users\ASUS\Documents\claude code\.invezgo-cache")
+                 if os.name == "nt" else Path.home() / ".cache" / "invezgo")
 CACHE_DIR = Path(os.environ.get("INVEZGO_CACHE_DIR", str(DEFAULT_CACHE)))
 
 TIMEOUT = 30
