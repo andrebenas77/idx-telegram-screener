@@ -112,8 +112,16 @@ set +e
 python3 "${ROOT}/scripts/backfill_panel.py" --incremental --window 90 >>"$LOG" 2>&1
 REFRESH_CODE=$?
 if [[ $REFRESH_CODE -ne 0 ]]; then
-    log "[!!] panel refresh exited ${REFRESH_CODE} — likely a corporate action in the window"
-    log "     fix: py scripts/backfill_panel.py --refresh-actions"
+    # Distinguish the causes — an earlier version blamed every non-zero exit on a
+    # corporate action, which sent a manual-run env problem chasing the wrong fix.
+    case $REFRESH_CODE in
+        2) log "[!!] panel refresh: INVEZGO_API_KEY not set. systemd supplies it from"
+           log "     /etc/idx-screener.env; a manual shell does NOT — export it first." ;;
+        1) log "[!!] panel refresh: corporate action inside the window, so the merged"
+           log "     slice would not match older history."
+           log "     fix: python3 scripts/backfill_panel.py --refresh-actions" ;;
+        *) log "[!!] panel refresh exited ${REFRESH_CODE} — see the log above" ;;
+    esac
 else
     # Page first, summary second: a summary that linked to a page which failed to
     # rebuild would point at yesterday's board while reading as today's.

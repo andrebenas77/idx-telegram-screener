@@ -49,7 +49,12 @@ BASE = "https://api.sectors.app/v2"
 MCP_URL = "https://sectors-mcp.supertype.ai/mcp"
 
 # Lives outside both skill repos so neither publishes it to GitHub Pages.
-DEFAULT_CACHE = Path(r"C:\Users\ASUS\Documents\claude code\.sectors-cache")
+# Platform-split: on Linux a Windows path does NOT raise — Path() treats it as a
+# relative name, so the VPS was creating a directory literally called
+# `C:\Users\ASUS\Documents\claude code\.sectors-cache` inside the repo working tree.
+# It showed up as untracked junk and the cache never landed where anything expected it.
+DEFAULT_CACHE = (Path(r"C:\Users\ASUS\Documents\claude code\.sectors-cache")
+                 if os.name == "nt" else Path.home() / ".cache" / "sectors")
 CACHE_DIR = Path(os.environ.get("SECTORS_CACHE_DIR", str(DEFAULT_CACHE)))
 
 TIMEOUT = 30
