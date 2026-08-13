@@ -18,6 +18,15 @@ Pages. This measures **attention/crowding, not sentiment**. It is not investment
 3. **Read-only on Telegram.** The scripts only read messages — never post, forward, join, or delete.
 4. **Ask before pushing.** Show the summary first; commit & push only after the user confirms.
 5. **The scripts do the counting.** Don't hand-count or hand-edit `docs/` HTML — always regenerate.
+6. **Invezgo tape is only valid after the close.** IDX masks broker codes during the session —
+   an in-session pull returns `buyer`/`seller` as `--` and is worthless. Run `capture_tape.py`
+   after **17:00 WIB**; it refuses masked data unless forced. See `reference/invezgo.md`.
+7. **Invezgo quota is shared across surfaces and unmetered.** Every `invezgo` MCP tool call spends
+   from the same pool as `capture_tape.py`, with no ledger. `/usage/api` is FREE — check it rather
+   than guessing, and never leave an MCP call in a loop. Requests take ~45s each, so a careless
+   sweep blocks for minutes as well as costing quota.
+8. **Never publish raw Invezgo tape.** `data/tape/` is git-ignored: this repo is public and the tick
+   feed is licensed. Derived signals are fine to publish; the raw prints are not.
 
 ## First-time setup (once)
 If `secrets/.env` or `secrets/screener.session` is missing, walk the user through `README.md`:
@@ -36,6 +45,8 @@ IDX Telegram Screener — progress
 - [ ] 3. Sanity-check the printed Top-15 (counts plausible? any junk match?)
 - [ ] 4. Fetch prices:  py scripts/fetch_prices.py   (Yahoo .JK: last close + Δ1d/Δ5d/RVOL)
 - [ ] 4b. Fetch broker flow:  py scripts/fetch_brokers.py  (inst/hnw/scalper/retail + net foreign)
+- [ ] 4c. Capture tape (AFTER 17:00 WIB only):  py scripts/capture_tape.py
+        broker-tagged prints + NG crossings -> data/tape/. Skip if running before the close.
 - [ ] 5. News scan (top-5 crowded) -> build/news-<date>.json   (see reference/news-sources.md)
 - [ ] 6. Build:  py scripts/build_screener.py
 - [ ] 7. Verify docs/index.html in the browser preview

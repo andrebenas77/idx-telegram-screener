@@ -4,6 +4,7 @@
 # credential-free .env.example to ship so a fresh clone can be set up.
 secrets/*
 !secrets/.env.example
+!secrets/trade.env.example
 *.session
 *.session-journal
 .env
@@ -27,6 +28,17 @@ data/tape/
 # reproducible — `py scripts/backfill_panel.py` rebuilds it in ~113 requests — so there
 # is nothing here that needs versioning.
 data/panel/
+
+# The position book. This is the one file here that is about YOU rather than about the
+# market: account equity, lot counts, rupiah P&L. `docs/` is a public GitHub Pages site
+# and this repo is public, so the book never leaves the machine it runs on. Nothing the
+# trade layer writes may land in docs/ — the delivery channel is Telegram and local JSON.
+data/book/
+
+# Cached 5-minute bars from Invezgo's multi-time endpoint. Same reasoning as data/tape/
+# and data/panel/: a paid feed, close to the vendor's raw product rather than a derived
+# signal. Reproducible in ~113 requests via `py scripts/fetch_intraday.py`.
+data/intraday/
 
 # Python
 __pycache__/

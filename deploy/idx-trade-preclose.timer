@@ -1,0 +1,18 @@
+[Unit]
+Description=IDX Trade — pre-close exit decision, 15:40 WIB on weekdays
+Documentation=https://github.com/andrebenas77/idx-telegram-screener
+
+[Timer]
+# 15:40 reads the 15:35 bar — the last complete 5-minute bar — and leaves ~15
+# minutes to act before the 16:00 close.
+OnCalendar=Mon..Fri *-*-* 15:40:00 Asia/Jakarta
+
+# Persistent=false, and this one matters. A catch-up run firing at 22:00 would
+# tell you to sell into a market that closed six hours ago. If the box was down at
+# 15:40, the right behaviour is to say nothing.
+Persistent=false
+
+Unit=idx-trade-preclose.service
+
+[Install]
+WantedBy=timers.target

@@ -41,7 +41,7 @@
     "flow_trend_sessions": 3
   },
 
-  "_comment_v4": "Broker-cohort flow (v3). One /broker-summary/ call per ticker (1 credit) returns every broker's buy/sell/net for history_days, from which we derive the group split, net foreign flow, accumulation runs and ticket sizes. Groups are behavioural and live in reference/brokers.csv. Ratios are RELATIVE to each stock's own median value-per-trade, because a fixed rupiah threshold misclassifies across price levels.",
+  "_comment_v4": "Broker-cohort flow (v3). One /broker-summary/ call per ticker (1 credit) returns every broker's buy/sell/net for history_days, from which we derive the group split, net foreign flow, accumulation runs and ticket sizes. Groups are behavioural and live in reference/brokers.csv. Ratios are RELATIVE to each stock's own median value-per-trade, because a fixed rupiah threshold misclassifies across price levels. credit_ceiling counts SECTORS credits, which are weighted per endpoint and billed on a different plan entirely — it has nothing to do with Invezgo's 30,000/month request quota in _comment_v6, so do not resize one from the other. Measured spend at top_n 15: 3 credits warm-cache, ~15-30 cold, against a ceiling of 60 — not binding.",
   "brokers": {
     "enabled": true,
     "top_n": 15,
@@ -58,5 +58,18 @@
 
   "_comment_v5": "Prices. Sectors /daily/ is primary for the top price_sectors_n crowded tickers (1 credit each, 90-day window covers d1/d5/RVOL); everything else, and any Sectors failure, falls back to Yahoo .JK for free.",
   "price_source": "sectors",
-  "price_sectors_n": 20
+  "price_sectors_n": 20,
+
+  "_comment_v6": "Invezgo broker-tagged tape. MEASURED, not documented — see reference/invezgo.md. QUOTA: the published 'Basic: 100 requests/hari' is wrong by ~300x. The real ceiling is 30,000 requests per MONTH, resetting on the 'expire' date the meter returns (~1,360 per trading session). GET /usage/api is the authoritative check — it costs 0, needs no argument, and is the only place MCP spend is visible; read it rather than reasoning from the docs or from this comment. Re-confirmed live 2026-08-06: usage 12, remaining 29988, limit 30000, expire 2026-09-05. LATENCY: an earlier note here claimed ~45s per request — that was WRONG, it was this box's IPv6 blackhole misread as server time. Re-probed 2026-08-06 dual-stack: 0.46s order-book, 1.9-2.1s tape page, 4.3s tape history, 0.13-0.57s /usage/api. Requests are FAST, so quota — not time — is the thing to watch, and an accidental loop drains it quickly and silently. workers still helps but is no longer load-bearing. IDX MASKS BROKER CODES DURING THE SESSION — capture must run after 17:00 WIB or the archive is anonymous and worthless. limit caps at 150 rows/page (a full BBCA session is 139 pages), so capture_tape.py pulls the top 150 tickets by volume per board in ONE request each; that reproduced Sectors' net direction 10/10. boards RG+NG: NG carries the crossings (same broker both sides). Batch endpoints return 402 on this plan. run_budget is a per-run ceiling, not the plan limit — and it is deliberately NOT sized off the quota. Measured spend: top_n 25 x 2 boards = ~50 requests/run, ~3.7% of the monthly quota across 22 sessions, so run_budget 120 already has ~2.4x headroom and is not binding. Its job is to stop a runaway loop, so quota headroom alone is never a reason to raise it; raise it only when a real run is actually hitting it.",
+  "invezgo": {
+    "enabled": true,
+    "run_budget": 120,
+    "workers": 4,
+    "top_n": 25,
+    "boards": ["RG", "NG"],
+    "max_limit": 150,
+    "disclosure_hour_wib": 17,
+    "full_tape_codes": [],
+    "full_max_pages": 200
+  }
 }

@@ -1,0 +1,22 @@
+[Unit]
+Description=IDX Trade — pre-open plan, 07:15 WIB on weekdays
+Documentation=https://github.com/andrebenas77/idx-telegram-screener
+
+[Timer]
+# 07:15, fifteen minutes after idx-screener.timer, so the momentum board and the
+# refreshed panel both exist before this reads them. A separate lock file means a
+# slow board build delays this run rather than colliding with it.
+OnCalendar=Mon..Fri *-*-* 07:15:00 Asia/Jakarta
+
+# Inline timezones need systemd >= 250. Check with `systemctl --version`; on older
+# releases drop the zone and use 00:15:00 UTC, which is the same instant because
+# Jakarta is UTC+7 year-round with no DST.
+
+# A missed pre-open plan is still useful when the box comes back — it describes
+# levels for a session that may not have started yet.
+Persistent=true
+
+Unit=idx-trade-plan.service
+
+[Install]
+WantedBy=timers.target

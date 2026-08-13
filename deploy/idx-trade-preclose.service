@@ -1,0 +1,31 @@
+[Unit]
+Description=IDX Trade — pre-close exit decision
+Documentation=https://github.com/andrebenas77/idx-telegram-screener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=screener
+Group=screener
+WorkingDirectory=/home/screener/idx-telegram-screener
+
+EnvironmentFile=/etc/idx-screener.env
+Environment=PATH=/home/screener/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+# trade_manage.py exits silently when the book is flat, and reports "no bars for
+# today" rather than a verdict when the feed is empty. That is the holiday
+# calendar: the absence of bars IS the signal, and unlike a hardcoded list of IDX
+# holidays it cannot go stale.
+ExecStart=/usr/bin/flock -w 300 /tmp/idx-trade.lock \
+    /usr/bin/python3 /home/screener/idx-telegram-screener/scripts/trade_manage.py \
+    --notify
+
+TimeoutStartSec=10min
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=full
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target
