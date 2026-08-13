@@ -108,6 +108,8 @@ log "claude exited ${CODE} after ${DUR}s"
 # ---------------------------------------------------------------------------
 MOM_SUMMARY=""
 MOM_OK=false
+ACC_SUMMARY=""
+ACC_OK=false
 set +e
 python3 "${ROOT}/scripts/backfill_panel.py" --incremental --window 90 >>"$LOG" 2>&1
 REFRESH_CODE=$?
@@ -148,9 +150,35 @@ else
             log "momentum board unchanged — nothing to publish"
         fi
     fi
+
+    # ---- accumulation board (the pre-momentum stage) --------------------------------
+    # Deliberately a WARN, never a FATAL: it is observation-mode and unvalidated, so a
+    # failure here must not take down a run whose crowded and momentum boards are fine.
+    # It also needs data/panel/gross-*.csv.gz; without that it renders empty and says so
+    # rather than erroring, which is the same degrade-don't-block posture as every other
+    # input in this pipeline.
+    if python3 "${ROOT}/scripts/build_universe.py" --no-discover >>"$LOG" 2>&1 \
+       && python3 "${ROOT}/scripts/build_accum_board.py" >>"$LOG" 2>&1; then
+        ACC_SUMMARY="$(python3 "${ROOT}/scripts/build_accum_board.py" --summary \
+                        2>>"$LOG")"
+        [[ -n "$ACC_SUMMARY" ]] && ACC_OK=true
+        if [[ -n "$(git status --porcelain docs/accumulation.html)" ]]; then
+            if git add docs/accumulation.html \
+               && git commit -q -m "Accumulation board ${DATE}" >>"$LOG" 2>&1 \
+               && git push -q origin main >>"$LOG" 2>&1; then
+                log "accumulation board published"
+            else
+                log "[!!] accumulation board built but NOT published"
+                ACC_OK=false
+            fi
+        else
+            log "accumulation board unchanged — nothing to publish"
+        fi
+    fi
 fi
 set -e
 $MOM_OK && log "momentum board built" || log "[!!] momentum board NOT built"
+$ACC_OK && log "accumulation board built" || log "[!] accumulation board NOT built"
 
 # --output-format json wraps the reply; fall back to raw output if it isn't JSON
 # (e.g. an auth error printed as plain text).
@@ -218,6 +246,14 @@ elif ! grep -q "session " "${ROOT}/docs/momentum.html" 2>/dev/null; then
     WARN+=("docs/momentum.html has no session line — it may be stale")
 fi
 
+# 6b. The accumulation board is observation-mode and unvalidated, so it warns and never
+# fails the run. An empty board is a real state (no gross partition yet), not an error.
+if ! $ACC_OK; then
+    WARN+=("accumulation board not rebuilt — see the log")
+elif ! grep -q "${DATE}" "${ROOT}/docs/accumulation.html" 2>/dev/null      && ! grep -q "IDX Accumulation" "${ROOT}/docs/accumulation.html" 2>/dev/null; then
+    WARN+=("docs/accumulation.html looks stale")
+fi
+
 for w in ${WARN[@]+"${WARN[@]}"};  do log "[warn] $w"; done
 for f in ${FATAL[@]+"${FATAL[@]}"}; do log "[!!] $f"; done
 
@@ -260,12 +296,23 @@ if [[ -n "$MOM_SUMMARY" ]]; then
 ${MOM_SUMMARY}"
 fi
 
+# The accumulation board rides in the same message as the other two. notify_telegram.py
+# chunks at 3800 chars on line boundaries, so three boards in one text is safe; three
+# separate notifications at 07:00 would not be.
+ACCTEXT=""
+if [[ -n "$ACC_SUMMARY" ]]; then
+    ACCTEXT="
+
+------------------------------
+${ACC_SUMMARY}"
+fi
+
 if $OK; then
     # One message carrying both boards, not two notifications.
     notify --title "IDX screener — ${DATE}" \
            --text "${SUMMARY}
 
-Board: ${SITE}${MOMTEXT}${WARNTEXT}"
+Board: ${SITE}${MOMTEXT}${ACCTEXT}${WARNTEXT}"
     log "=== run ok ==="
 else
     REASON=""

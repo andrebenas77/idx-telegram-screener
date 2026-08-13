@@ -73,9 +73,30 @@ def to_float(v, default=None):
         return default
 
 
-def load_universe(limit: int | None) -> list[str]:
-    rows = list(csv.DictReader(TICKERS.open(encoding="utf-8")))
-    syms = [r["ticker"].strip().upper() for r in rows if r.get("liquid") == "1"]
+def load_universe(limit: int | None, from_universe: bool = False) -> list[str]:
+    """Which names the panel covers.
+
+    `tickers.csv` is a Telegram ALIAS DICTIONARY, not a liquidity screen — it exists so
+    chatter matching can turn "Barito Renewables" into BREN. Using it as the panel
+    universe is why DSSA was invisible to every board: it had been top-10 by traded value
+    since 2026-06-03 and was simply not on the list. Measured 2026-08-13, the
+    tickers.csv-derived panel reproduced Sectors' own top-10-by-value on 4 of 49 days.
+
+    `--from-universe` reads the value-derived pool written by
+    `build_universe.py --discover-only` instead. That pool is dated and rebuilt from
+    traded value, so a name enters because the market traded it, not because someone
+    remembered to add it.
+    """
+    if from_universe:
+        pool_file = OUT / "universe_pool.json"
+        if not pool_file.exists():
+            raise SystemExit(
+                f"{pool_file} not found — run: py build_universe.py --discover-only")
+        pool = json.loads(pool_file.read_text(encoding="utf-8")).get("pool") or []
+        syms = [str(s).strip().upper() for s in pool if str(s).strip()]
+    else:
+        rows = list(csv.DictReader(TICKERS.open(encoding="utf-8")))
+        syms = [r["ticker"].strip().upper() for r in rows if r.get("liquid") == "1"]
     return syms[:limit] if limit else syms
 
 
@@ -200,6 +221,9 @@ def main() -> int:
                     help="skip the Sectors corporate-action pull (prices stay RAW)")
     ap.add_argument("--symbols", default=None,
                     help="comma-separated symbols instead of the universe (testing)")
+    ap.add_argument("--from-universe", action="store_true",
+                    help="take the universe from data/panel/universe_pool.json (value-"
+                         "derived) instead of tickers.csv liquid=1 (alias dictionary)")
     ap.add_argument("--incremental", action="store_true",
                     help="daily refresh: pull a short recent window and MERGE into the "
                          "existing partitions instead of rebuilding from scratch")
@@ -221,7 +245,7 @@ def main() -> int:
              else end - timedelta(days=int(365 * args.years)))
     partial = bool(args.symbols or args.limit)
     universe = ([s.strip().upper() for s in args.symbols.split(",") if s.strip()]
-                if args.symbols else load_universe(args.limit))
+                if args.symbols else load_universe(args.limit, args.from_universe))
 
     # Partitions are written in truncate mode, so a partial run would otherwise replace
     # the whole panel with just the symbols it touched. Send partial runs somewhere

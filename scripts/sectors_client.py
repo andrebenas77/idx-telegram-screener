@@ -92,6 +92,10 @@ class SectorsClient:
         self.credits = 0
         self.cache_hits = 0
         self.errors: list[str] = []
+        # Windows the API silently narrowed. Not errors — the call succeeded — but a
+        # caller that ignores these is quietly working with less history than it asked
+        # for. See broker_summary().
+        self.clamps: list[str] = []
         self._cache: dict = {}
         self._cache_path = CACHE_DIR / f"{self.date}.json"
         if self.use_cache:
@@ -205,6 +209,8 @@ class SectorsClient:
 
     def report(self) -> None:
         bits = [f"credits used: {self.credits}", f"cache hits: {self.cache_hits}"]
+        if self.clamps:
+            bits.append(f"clamped windows: {len(self.clamps)}")
         if self.errors:
             bits.append(f"errors: {len(self.errors)}")
         self._log(" | ".join(bits))
@@ -238,13 +244,114 @@ class SectorsClient:
                        end: str | None = None, broker_code: str | None = None):
         """EVERY broker's buy/sell/net/lots/freq for one ticker, grouped by day.
 
-        Window capped at 14 days by the API. One credit returns the entire book, which
-        is what makes both the cohort split and the derived foreign flow affordable —
-        summing the foreign brokers' `nval` reproduces /foreign-flow/ exactly.
+        One credit returns the entire book, which is what makes both the cohort split
+        and the derived foreign flow affordable — summing the foreign brokers' `nval`
+        reproduces /foreign-flow/ exactly.
+
+        THE WINDOW IS CAPPED AT 14 DAYS AND CLAMPS SILENTLY. Asking for 2026-07-20 ->
+        2026-08-12 (23 days) returns HTTP 200 with no warning and a payload whose echoed
+        `start` reads 2026-07-29. A caller that trusts its own request parameters loses a
+        third of the window and never learns. This method now compares the echoed `start`
+        against the requested one and records any shortfall on `self.clamps`; use
+        broker_summary_range() to cover a longer span correctly.
+
+        Field notes for callers:
+          `blot`/`slot`   LOTS of 100 shares (Invezgo's equivalents are SHARES)
+          `bavg_per_share`/`savg_per_share`   per share
+          `navg_per_share`  A DECOY. It is a verbatim copy of bavg_per_share when
+                            nval > 0 and of savg_per_share when nval < 0 — it is not a
+                            net average price. Compute nval / (nlot * 100) instead.
+          sum(bval) over brokers ~= the day's traded value, which is the only route to
+                            daily VALUE on this API (/daily/ does not carry it).
         """
-        return self.get(f"/broker-summary/{strip_jk(symbol)}/",
-                        {"start": start, "end": end, "broker_code": broker_code},
-                        credits=1)
+        payload = self.get(f"/broker-summary/{strip_jk(symbol)}/",
+                           {"start": start, "end": end, "broker_code": broker_code},
+                           credits=1)
+        if payload and start:
+            echoed = payload.get("start") if isinstance(payload, dict) else None
+            if echoed and str(echoed) > str(start):
+                note = (f"broker_summary({strip_jk(symbol)}) window CLAMPED: "
+                        f"asked {start}, got {echoed}")
+                self._log(note)
+                self.clamps.append(note)
+        return payload
+
+    def broker_summary_range(self, symbol: str, start: str, end: str,
+                             broker_code: str | None = None) -> list[dict]:
+        """broker_summary() over an arbitrary span, walking backwards in whatever window
+        the API actually grants rather than in an assumed 14 days.
+
+        Chains from `end` towards `start`, and takes the NEXT window's end from the
+        echoed `start` of the payload just received. That way the real cap is measured
+        per call instead of hard-coded, so a vendor change to 10 or 20 days degrades to
+        "more requests" rather than to silent holes.
+
+        Returns a flat list of the API's per-day objects ({date, summary:[...]}),
+        de-duplicated by date and sorted ascending. Empty list on total failure.
+        """
+        from datetime import date as _date, timedelta as _td
+
+        def _d(s: str) -> _date:
+            y, m, dd = (int(x) for x in str(s)[:10].split("-"))
+            return _date(y, m, dd)
+
+        by_date: dict[str, dict] = {}
+        cursor, floor = _d(end), _d(start)
+        guard = 0
+        while cursor >= floor and guard < 60:
+            guard += 1
+            payload = self.get(
+                f"/broker-summary/{strip_jk(symbol)}/",
+                {"start": floor.isoformat(), "end": cursor.isoformat(),
+                 "broker_code": broker_code}, credits=1)
+            if not payload:
+                break
+            for row in (payload.get("data") or []):
+                d = str(row.get("date"))[:10]
+                if d:
+                    by_date[d] = row
+            echoed = str(payload.get("start") or "")[:10]
+            if not echoed:
+                break
+            got = _d(echoed)
+            if got <= floor:
+                break            # the whole remaining span came back in one call
+            cursor = got - _td(days=1)
+        if guard >= 60:
+            msg = f"broker_summary_range({strip_jk(symbol)}) hit the 60-window guard"
+            self._log(msg)
+            self.errors.append(msg)
+        return [by_date[k] for k in sorted(by_date)]
+
+    def most_traded(self, start: str | None = None, end: str | None = None,
+                    n_stock: int = 10, adjusted: bool = True,
+                    sub_sector: str | None = None):
+        """Most-traded stocks per date. Window capped at 90 days.
+
+        `adjusted=True` ranks by VALUE, `adjusted=False` by raw share volume, and the two
+        produce genuinely different universes on the same day (2026-08-12: CUAN/TPIA/PTRO
+        by value vs BUMI/IATA/JGLE by volume). Take the union when building a universe.
+
+        `n_stock` IS HARD-CAPPED AT 10 and clamps silently — passing 20 returns 10 with
+        no warning. Asserted here rather than assumed, so the day the cap moves we find
+        out from a log line instead of from a quietly narrower universe.
+
+        Output carries only {symbol, company_name, volume, price}; there is no `value`
+        field, so compute volume * price yourself.
+        """
+        if n_stock > 10:
+            self._log(f"most_traded: n_stock={n_stock} requested but the API caps at 10")
+        payload = self.get("/most-traded/",
+                           {"start": start, "end": end, "n_stock": n_stock,
+                            "adjusted": str(bool(adjusted)).lower(),
+                            "sub_sector": sub_sector}, credits=2)
+        if isinstance(payload, dict):
+            for day, rows in payload.items():
+                if isinstance(rows, list) and len(rows) > n_stock:
+                    self._log(f"most_traded: {day} returned {len(rows)} > n_stock "
+                              f"{n_stock} — the cap may have changed")
+                break
+        return payload
 
     def daily(self, symbol: str, start: str | None = None, end: str | None = None):
         """Daily close, volume and market cap. Window capped at 90 days by the API.
