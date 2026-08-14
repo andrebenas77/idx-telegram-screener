@@ -395,18 +395,62 @@ class InvezgoClient:
             {"from": start, "to": end, "investor": investor, "market": market,
              "scope": scope})
 
+    # Measured 2026-08-13: the endpoint serves ~2 years and returns an EMPTY payload —
+    # not an error, not a clamped window — when `from` reaches past that horizon.
+    HORIZON_DAYS = 700
+
     def inventory_chart(self, symbol: str, start: str | None = None,
                         end: str | None = None, scope: str = "val",
                         investor: str = "all", market: str = MARKET_REGULAR,
-                        limit: int | None = None):
+                        limit: int | None = None, _retry: bool = True):
         """Cumulative broker accumulation/distribution — position and average entry.
 
         The cost-basis input: distance of spot from a broker's average entry says where
         they are underwater and where they would defend.
+
+        HARD 2-YEAR HISTORY HORIZON, and it fails in a way callers do not notice.
+        Verified on BREN, 2026-08-13:
+
+            from 2024-08-14 to 2026-08-13  (729d) -> 475 price rows
+            from 2024-08-13 to 2026-08-12  (729d) ->   0 rows
+            from 2024-08-13 to 2026-08-13  (730d) ->   0 rows
+
+        Identical window LENGTH, opposite outcome — so it is the absolute `from` date
+        against a ROLLING horizon, not a cap on span. The server answers
+
+            422  "`from`: Data historis hanya tersedia untuk 2 tahun terakhir.
+                  Untuk akses data lebih dalam, silakan berlangganan Enterprise."
+
+        i.e. a plan limit, not a bug. But get() maps every 422 to None, so from the
+        caller's side it is indistinguishable from "this symbol has no data" — and
+        `backfill_panel.py --years 2.0` computes `start = today - 730`, which sits
+        exactly on that boundary. A full rebuild is one day of calendar drift away from
+        silently writing an empty panel for EVERY symbol.
+
+        This method therefore RETRIES ONCE with `from` clamped to `end - HORIZON_DAYS`
+        and logs it, rather than handing back a plausible-looking empty result.
         """
-        return self.get(f"/analysis/inventory-chart/stock/{strip_jk(symbol)}",
-                        {"from": start, "to": end, "scope": scope,
-                         "investor": investor, "market": market, "limit": limit})
+        payload = self.get(f"/analysis/inventory-chart/stock/{strip_jk(symbol)}",
+                           {"from": start, "to": end, "scope": scope,
+                            "investor": investor, "market": market, "limit": limit})
+        if payload and (payload.get("price") or payload.get("broker")):
+            return payload
+        if not (_retry and start and end):
+            return payload
+
+        from datetime import date as _date, timedelta as _td
+        try:
+            s0, e0 = _date.fromisoformat(start[:10]), _date.fromisoformat(end[:10])
+        except ValueError:
+            return payload
+        if (e0 - s0).days <= self.HORIZON_DAYS:
+            return payload          # short window and still empty — genuinely no data
+        clamped = (e0 - _td(days=self.HORIZON_DAYS)).isoformat()
+        self._log(f"inventory_chart({strip_jk(symbol)}) empty for from={start}; "
+                  f"past the ~2y horizon — retrying from {clamped}")
+        return self.inventory_chart(symbol, start=clamped, end=end, scope=scope,
+                                    investor=investor, market=market, limit=limit,
+                                    _retry=False)
 
     def broker_summary_broker(self, broker_code: str, start: str | None = None,
                               end: str | None = None, investor: str = "all",

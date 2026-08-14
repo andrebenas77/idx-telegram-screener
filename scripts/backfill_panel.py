@@ -247,14 +247,22 @@ def main() -> int:
     universe = ([s.strip().upper() for s in args.symbols.split(",") if s.strip()]
                 if args.symbols else load_universe(args.limit, args.from_universe))
 
-    # Partitions are written in truncate mode, so a partial run would otherwise replace
-    # the whole panel with just the symbols it touched. Send partial runs somewhere
-    # harmless instead; to repair one symbol, re-run the FULL universe — the day-scoped
-    # caches make that nearly free.
+    # A FULL run writes partitions in truncate mode, so a partial full run would replace
+    # the whole panel with just the symbols it touched. Those go somewhere harmless.
+    #
+    # An INCREMENTAL run is different and safe: merge() replaces only rows whose symbol is
+    # in `refreshed` (= this run's universe) inside the window, and leaves every other
+    # symbol untouched. That is exactly the shape needed to ADD a name to an existing
+    # panel, so `--symbols X --incremental --window 730` pulls two years for X and merges
+    # it in for ~1 request, instead of forcing a 160-symbol rebuild that would also
+    # re-fetch ~160 symbols' corporate actions from Sectors.
     global OUT
-    if partial:
+    if partial and not args.incremental:
         OUT = OUT / "_partial"
         print(f"PARTIAL RUN -> writing to {OUT} (the real panel is left untouched)")
+    elif partial:
+        print(f"PARTIAL INCREMENTAL -> merging {len(universe)} symbol(s) into {OUT}; "
+              f"all other symbols are left untouched")
     OUT.mkdir(parents=True, exist_ok=True)
 
     # Duplicates in the universe would write the same (date, symbol, broker) twice and
