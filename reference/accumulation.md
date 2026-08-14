@@ -734,9 +734,18 @@ that in mind.
 
 ---
 
-## 7c. THE GATE TEST — INCONCLUSIVE, not refuted (2026-08-13)
+## 7c. THE GATE TEST — REFUTED, on a window verified usable (2026-08-13)
 
-> **CORRECTION, same day.** This section first read "one-sidedness is refuted". That
+> **FINAL STATUS, after extending coverage.** This section went through three states in a
+> day: "refuted" → "inconclusive" → **refuted properly**. The measurements below are all
+> real; only the window they were read from changed. Read §7d first — it is the verdict
+> that counts. What follows is the record of how it was reached.
+
+---
+
+### The intermediate correction (kept, because the reasoning is the reusable part)
+
+> This section first read "one-sidedness is refuted" off a 59-session window. That
 > verdict was wrong, and the error was mine: the test window cannot support a refutation.
 >
 > **The 59-session gross window is a regime in which the VALIDATED momentum rule also
@@ -851,6 +860,98 @@ panel and stand. The fourth was not.
 4. **The measurement corrections**, which would have silently corrupted anything built
    later: the window-scaling definedness floor, same-day-rank excluding the entry day,
    per-broker joint evaluation, churn priority, and `inventory_chart` day-1 flow.
+
+---
+
+## 7d. THE VERDICT — one-sidedness does nothing (2026-08-13, extended window)
+
+Coverage doubled to **75 symbols × 109 sessions, 2026-02-18 → 2026-08-12**, 163,717 extra
+broker-days, 427 further Sectors credits (770 total). Reconciliation exact again: 0 of
+53,572 rows differ by more than 1%.
+
+**The 23 names that were top-20 in Feb–May but are not in today's hot list were backfilled
+too.** Testing the earlier quarter with only the current 53 would have been survivorship
+bias, and it would have biased the result upward.
+
+### Check 0 passes — this window can carry a verdict
+
+| | mean excess, k=5 | n |
+|---|---|---|
+| momentum rule, full panel | +2.26pp | 2,862 |
+| **momentum rule, this window** | **+0.93pp → lift +0.84pp** | 314 |
+
+Pass condition was ≥ +0.50pp. Unlike the 59-session window, a known-good rule still works
+here, so a failure by one-sidedness means something.
+
+### The gradient runs the WRONG WAY — the decisive result
+
+5d lift by one-sidedness threshold:
+
+| `θ_osr` | absorb=today | absorb=window | L2 n |
+|---|---|---|---|
+| **≥ 0.70** | **+0.70pp** | **+0.90pp** | 630 |
+| ≥ 0.80 | +0.16pp | +0.34pp | 341 |
+| **≥ 0.90** | **−0.39pp** | +0.10pp | 186 |
+
+**More one-sidedness is monotonically worse.** If the thesis were right this table would
+slope the other way. §6.7 names exactly this — "the `osr20` gradient is flat or inverted →
+the discriminator itself is wrong" — as the cheapest available refutation, and it fires.
+Whatever small edge exists sits at the *loosest* threshold, which is closer to "a broker
+bought persistently" than to one-sidedness at all.
+
+### Design point, and the null that kills it
+
+`osr20 ≥ 0.80`, net ≥ 20% ADTV, absorb=today, **n=341**:
+
+| | lift |
+|---|---|
+| k=3 | −0.05pp |
+| k=5 | **+0.16pp** |
+| k=10 | +0.41pp |
+| sub-periods (k=5) | −0.86 / **+3.15** / −0.71 / −0.99 → **1 of 4** |
+
+One fold carries the entire average. And the null:
+
+| control | lift | gap vs real |
+|---|---|---|
+| **date shift (strict)** | −0.06pp | **0.22pp — inside the ±0.3pp tolerance** |
+| universe-only random | −0.24pp | 0.40pp |
+| broker-label shuffle | +0.16pp | 0.00pp — *vacuous, see below* |
+
+**The real result is not distinguishable from its date-shifted null.** +0.16pp against
+−0.06pp is a 0.22pp gap where the declared tolerance is ±0.3pp. The events carry no
+information beyond what random date alignment produces.
+
+### Verdict
+
+| check | result |
+|---|---|
+| 1. 5d lift ≥ +1.2pp | **FAIL** +0.16pp |
+| 2. ≥3 of 4 sub-periods | **FAIL** 1/4 |
+| 3. 10d lift ≥ 3d lift | PASS (+0.41 vs −0.05) |
+| 5. ≥7 of 9 grid cells positive | **FAIL** 6/9 |
+| n ≥ 250 | PASS (341) |
+| **check 0 — window usable** | **PASS (+0.84pp)** |
+
+**GATE FAILED on a window that was verified usable. One-sidedness is refuted.**
+
+The correct characterisation is **"it does nothing"**, not "it inverts" — the −0.83pp from
+the 59-session window was a regime artifact, and the honest number is **+0.16pp,
+indistinguishable from zero and from its own null**. Trade-plan integration stays
+cancelled. The board remains descriptive.
+
+### Two things worth carrying forward
+
+1. **`absorb_mode=window` beats `absorb_mode=today` at every single grid point** (+0.90 vs
+   +0.70, +0.34 vs +0.16, +0.10 vs −0.39). The instinct in §6.1 — that the same-day form
+   was the better one because it let BREN through — was wrong. Neither is good enough to
+   ship, but if this is ever revisited, start from `window`.
+2. **Null 1 remains vacuous** and this is now a harness defect worth fixing rather than a
+   caveat worth repeating: broker identity enters the score only through the quality tilt,
+   `broker_alpha.json` supplied no ranks in either run (tilt on == tilt off, +0.25pp
+   both), so shuffling broker labels changes nothing *by construction*. Either wire the
+   broker-alpha ranks in or drop the control — as it stands it always agrees with the real
+   result and can never fail.
 
 ---
 

@@ -613,6 +613,31 @@ def run_gate(args) -> int:
         print(f"  k={k:<3} {fmt(measure(p, base, k))}")
     bm = {k: (measure(p, base, k).get("mean_excess") or 0.0) for k in HORIZONS}
 
+    # ---- CHECK 0 (accumulation.md 6.0): is this window a regime where a known-good rule
+    # still works? Runs FIRST and a failure voids everything after it. Documented since
+    # 2026-08-13; executed here because a check that only exists in prose does not catch
+    # anything — the first gate run wrote up "refuted" from a window that also inverts the
+    # validated momentum rule.
+    import momentum_diagnose as _md
+    mom_all, _ = _md.build_all(p)
+    mom_win = [(s, i, 0.0, 0) for s, i, *_ in mom_all if lo_i <= i <= hi_i]
+    mom_full = [(s, i, 0.0, 0) for s, i, *_ in mom_all]
+    m_win, m_full = measure(p, mom_win, 5), measure(p, mom_full, 5)
+    mom_lift = ((m_win["mean_excess"] - bm[5]) * 100
+                if m_win.get("mean_excess") is not None else None)
+    window_ok = mom_lift is not None and mom_lift >= 0.5
+    print(f"\n{'=' * 74}\nCHECK 0 — is the window a usable regime?\n{'=' * 74}")
+    print(f"  momentum rule, full panel   : {fmt(m_full)}")
+    print(f"  momentum rule, THIS window  : {fmt(m_win)}"
+          + (f"   lift={mom_lift:+.2f}pp" if mom_lift is not None else ""))
+    print(f"  [{'PASS' if window_ok else 'FAIL'}] pass condition: momentum lift in-window "
+          f">= +0.50pp vs the same baseline")
+    if not window_ok:
+        print(f"\n  *** THIS WINDOW CANNOT REFUTE ANYTHING. ***")
+        print(f"  A known-good rule does not work here either, so a new rule failing is")
+        print(f"  indistinguishable from the quarter being hostile to the whole family.")
+        print(f"  Everything below is reported as INCONCLUSIVE regardless of its sign.")
+
     grid_osr = [float(x) for x in args.theta_osr.split(",")]
     grid_adtv = [float(x) / 100.0 for x in args.theta_adtv.split(",")]
     results, cells_pos = {}, 0
@@ -743,10 +768,15 @@ def run_gate(args) -> int:
     ]
     for name, ok, detail in checks:
         print(f"  [{'PASS' if ok else 'FAIL'}] {name:<42} {detail}")
-    passed = all(ok for _, ok, _ in checks)
-    print(f"\n  {'GATE PASSED' if passed else 'GATE NOT PASSED'} — "
-          + ("trade-plan integration may proceed"
-             if passed else "board stays observation-mode, no trade signals"))
+    passed = all(ok for _, ok, _ in checks) and window_ok
+    if not window_ok:
+        print(f"\n  VERDICT: INCONCLUSIVE — check 0 failed, so neither a pass nor a")
+        print(f"  refutation can be read from this window. Extend coverage and re-run.")
+    else:
+        print(f"\n  {'GATE PASSED' if passed else 'GATE FAILED'} — "
+              + ("trade-plan integration may proceed"
+                 if passed else "one-sidedness is refuted on a window that was "
+                                "verified usable"))
 
     out = PANEL / "accum_gate_test.json"
     out.write_text(json.dumps({
@@ -758,7 +788,10 @@ def run_gate(args) -> int:
                          "n_l1": len(l1), "n_l2": len(l2),
                          "lift3": lift3, "lift5": lift5, "lift10": lift10,
                          "folds_positive": pos},
-        "passed": passed,
+        "passed": passed, "window_ok": window_ok,
+        "check0": {"momentum_lift_pp": mom_lift,
+                   "momentum_window_mean": m_win.get("mean_excess"),
+                   "momentum_full_mean": m_full.get("mean_excess")},
         "checks": [{"name": n, "ok": o, "detail": d} for n, o, d in checks],
     }, ensure_ascii=False, indent=2, default=float), encoding="utf-8")
     print(f"\nwrote {out}")

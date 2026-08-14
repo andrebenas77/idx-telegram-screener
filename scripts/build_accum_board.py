@@ -428,9 +428,10 @@ def table(rows: list[dict]) -> str:
 def summary_text(session: str, buckets: dict, top: int = 6) -> str:
     """Plain text for notify_telegram.py — no markdown, it 400s on unescaped punctuation."""
     parts = [f"IDX ACCUMULATION - session {session}",
-             "DESCRIPTIVE ONLY - no validated signal. The gate test was INCONCLUSIVE:",
-             "its 59-session window also inverts the validated momentum rule",
-             "(-1.39pp vs +2.26pp full-sample), so it refutes nothing. Do not trade."]
+             "DESCRIPTIVE ONLY - the ranking rule FAILED its walk-forward on a window",
+             "verified usable. 5d lift +0.16pp vs a +1.2pp bar, and its date-shifted",
+             "null returns -0.06pp, so it is indistinguishable from noise. The gradient",
+             "also runs backwards: tighter one-sidedness scores WORSE. Do not trade."]
     for key, title, _ in BUCKET_META:
         rows = buckets.get(key) or []
         if not rows:
@@ -538,20 +539,23 @@ def main() -> int:
 <b>Observation mode &mdash; DESCRIPTIVE ONLY. Do not trade this board.</b> Its ranking
 rule has not passed a walk-forward test, so the page emits no entry, stop or size. It is
 kept because knowing <i>who is accumulating what</i> is useful in itself.
-<div class="ev"><b>Gate test (52 symbols &times; 59 sessions, 161,313 broker-days):</b>
-one-sidedness (<code>osr20 &ge; 0.80</code>, net &ge; 20% ADTV) scored a 5-day lift of
-<b>&minus;0.83pp</b> against a required +1.2pp, n=162.
-<b>That is INCONCLUSIVE, not a refutation.</b> The same 59-session window returns
-&minus;1.39pp for the <i>validated</i> momentum rule, which earns +2.26pp over the full
-two years &mdash; a ~3.8pp swing. Against the shared top-20 baseline the momentum rule was
-the <i>worse</i> of the two there (&minus;1.97pp against &minus;0.83pp). The window is
-hostile to the whole accumulation family, so it cannot separate a bad rule from a bad
-quarter. Extending coverage is the open item.<br>
-<b>Refuted on full history, and these do stand:</b> net-persistence plus a size floor
-(&minus;0.06pp, n=8,675, nulls reproducing the real result to 0.03pp); the
-<b>coalition</b> form of the size floor (marginal events flipping sign across the grid,
-+0.23 / &minus;0.63 / +0.44pp); and the original quiet-accumulation thesis
-(&minus;0.04 / +0.01pp).<br>
+<div class="ev"><b>Gate test &mdash; 75 symbols &times; 109 sessions (2026-02-18 to
+08-12), 325k broker-days, 770 Sectors credits.</b> The window was verified usable first:
+the <i>validated</i> momentum rule still earns +0.84pp lift inside it, so unlike the
+earlier 59-session run this verdict counts.<br>
+One-sidedness (<code>osr20 &ge; 0.80</code>, net &ge; 20% ADTV) returns a 5-day lift of
+<b>+0.16pp</b> on n=341, against a required +1.2pp &mdash; and its <b>date-shifted null
+returns &minus;0.06pp</b>, a 0.22pp gap where the tolerance is &plusmn;0.3pp. The signal
+is <b>not distinguishable from noise</b>. Positive in 1 of 4 sub-periods, with a single
+fold carrying the whole average.<br>
+<b>The gradient runs the wrong way,</b> which refutes the discriminator itself: lift falls
+monotonically as one-sidedness tightens &mdash; <b>+0.70pp</b> at
+<code>osr&ge;0.70</code>, +0.16pp at 0.80, <b>&minus;0.39pp</b> at 0.90. More of the thing
+is worse. Whatever edge exists sits at the loosest threshold, which is nearer to "a broker
+bought persistently" than to one-sidedness at all.<br>
+<b>Also refuted:</b> net-persistence plus a size floor (&minus;0.06pp, n=8,675); the
+<b>coalition</b> form of the size floor (marginal events flipping sign, +0.23 /
+&minus;0.63 / +0.44pp); the original quiet-accumulation thesis (&minus;0.04 / +0.01pp).<br>
 <b>For an actual signal use the momentum board</b>, which requires price confirmation and
 is the only rule here validated over the full panel.</div>
 </div>
