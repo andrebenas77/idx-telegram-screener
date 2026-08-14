@@ -110,6 +110,8 @@ MOM_SUMMARY=""
 MOM_OK=false
 ACC_SUMMARY=""
 ACC_OK=false
+BRK_SUMMARY=""
+BRK_OK=false
 set +e
 python3 "${ROOT}/scripts/backfill_panel.py" --incremental --window 90 >>"$LOG" 2>&1
 REFRESH_CODE=$?
@@ -175,9 +177,29 @@ else
             log "accumulation board unchanged — nothing to publish"
         fi
     fi
+
+    # ---- broker behaviour board (DESCRIPTIVE, never a signal) ----------------------
+    # Same warn-not-fail posture as the accumulation block. This page makes no predictive
+    # claim -- five flow theses have failed a walk-forward -- so a failure here must never
+    # take down a run whose crowded and momentum boards are fine.
+    if python3 "${ROOT}/scripts/build_broker_board.py" >>"$LOG" 2>&1; then
+        BRK_SUMMARY="$(python3 "${ROOT}/scripts/build_broker_board.py" --summary                         2>>"$LOG")"
+        [[ -n "$BRK_SUMMARY" ]] && BRK_OK=true
+        if [[ -n "$(git status --porcelain docs/brokers.html)" ]]; then
+            if git add docs/brokers.html                && git commit -q -m "Broker board ${DATE}" >>"$LOG" 2>&1                && git push -q origin main >>"$LOG" 2>&1; then
+                log "broker board published"
+            else
+                log "[!!] broker board built but NOT published"
+                BRK_OK=false
+            fi
+        else
+            log "broker board unchanged — nothing to publish"
+        fi
+    fi
 fi
 set -e
 $MOM_OK && log "momentum board built" || log "[!!] momentum board NOT built"
+$BRK_OK && log "broker board built" || log "[!] broker board NOT built"
 $ACC_OK && log "accumulation board built" || log "[!] accumulation board NOT built"
 
 # --output-format json wraps the reply; fall back to raw output if it isn't JSON
@@ -307,12 +329,20 @@ if [[ -n "$ACC_SUMMARY" ]]; then
 ${ACC_SUMMARY}"
 fi
 
+BRKTEXT=""
+if [[ -n "$BRK_SUMMARY" ]]; then
+    BRKTEXT="
+
+------------------------------
+${BRK_SUMMARY}"
+fi
+
 if $OK; then
     # One message carrying both boards, not two notifications.
     notify --title "IDX screener — ${DATE}" \
            --text "${SUMMARY}
 
-Board: ${SITE}${MOMTEXT}${ACCTEXT}${WARNTEXT}"
+Board: ${SITE}${MOMTEXT}${ACCTEXT}${BRKTEXT}${WARNTEXT}"
     log "=== run ok ==="
 else
     REASON=""
