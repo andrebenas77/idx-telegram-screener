@@ -536,6 +536,18 @@ def main() -> int:
 <a href="index.html" style="color:var(--acc)">crowded board</a></p>
 
 <div class="card banner">
+<b>ARCHIVED &mdash; this page is no longer updated.</b> It was removed from the daily run
+on 2026-08-14 and is kept as a dated record of a refuted thesis. The figures below are
+frozen at the session shown in the title. For the live descriptive view see the
+<a href="brokers.html" style="color:var(--acc)">broker behaviour board</a>; for an actual
+signal see the <a href="momentum.html" style="color:var(--acc)">momentum board</a>.
+<div class="ev">Two reasons it was retired: its ranking rule <b>failed its walk-forward</b>
+(below), and on the VPS it has no data at all &mdash; the gross partition it needs is
+local-only, so it would have published an empty page into the 07:00 message every
+day.</div>
+</div>
+
+<div class="card banner">
 <b>Observation mode &mdash; DESCRIPTIVE ONLY. Do not trade this board.</b> Its ranking
 rule has not passed a walk-forward test, so the page emits no entry, stop or size. It is
 kept because knowing <i>who is accumulating what</i> is useful in itself.

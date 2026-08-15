@@ -108,8 +108,6 @@ log "claude exited ${CODE} after ${DUR}s"
 # ---------------------------------------------------------------------------
 MOM_SUMMARY=""
 MOM_OK=false
-ACC_SUMMARY=""
-ACC_OK=false
 BRK_SUMMARY=""
 BRK_OK=false
 set +e
@@ -153,40 +151,31 @@ else
         fi
     fi
 
-    # ---- accumulation board (the pre-momentum stage) --------------------------------
-    # Deliberately a WARN, never a FATAL: it is observation-mode and unvalidated, so a
-    # failure here must not take down a run whose crowded and momentum boards are fine.
-    # It also needs data/panel/gross-*.csv.gz; without that it renders empty and says so
-    # rather than erroring, which is the same degrade-don't-block posture as every other
-    # input in this pipeline.
-    if python3 "${ROOT}/scripts/build_universe.py" --no-discover >>"$LOG" 2>&1 \
-       && python3 "${ROOT}/scripts/build_accum_board.py" >>"$LOG" 2>&1; then
-        ACC_SUMMARY="$(python3 "${ROOT}/scripts/build_accum_board.py" --summary \
-                        2>>"$LOG")"
-        [[ -n "$ACC_SUMMARY" ]] && ACC_OK=true
-        if [[ -n "$(git status --porcelain docs/accumulation.html)" ]]; then
-            if git add docs/accumulation.html \
-               && git commit -q -m "Accumulation board ${DATE}" >>"$LOG" 2>&1 \
-               && git push -q origin main >>"$LOG" 2>&1; then
-                log "accumulation board published"
-            else
-                log "[!!] accumulation board built but NOT published"
-                ACC_OK=false
-            fi
-        else
-            log "accumulation board unchanged — nothing to publish"
-        fi
-    fi
-
     # ---- broker behaviour board (DESCRIPTIVE, never a signal) ----------------------
-    # Same warn-not-fail posture as the accumulation block. This page makes no predictive
-    # claim -- five flow theses have failed a walk-forward -- so a failure here must never
-    # take down a run whose crowded and momentum boards are fine.
-    if python3 "${ROOT}/scripts/build_broker_board.py" >>"$LOG" 2>&1; then
-        BRK_SUMMARY="$(python3 "${ROOT}/scripts/build_broker_board.py" --summary                         2>>"$LOG")"
+    #
+    # The accumulation board was REMOVED from this run on 2026-08-14. Its ranking rule
+    # failed its walk-forward, and on the VPS it also has no data: the gross partition it
+    # needs is gitignored and local-only, so it would publish an empty page into the
+    # 07:00 message every single day. docs/accumulation.html stays on the site as a dated
+    # record of the refutation; it is simply no longer regenerated.
+    #
+    # build_universe.py stays and is NOT optional — it used to live in the accumulation
+    # block, but build_broker_board.py reads data/panel/universe-*.csv.gz to decide which
+    # names to show, so it had to move here rather than leave with it.
+    #
+    # Warn-not-fail: this page makes no predictive claim, so a failure must never take
+    # down a run whose crowded and momentum boards are fine. The spread-capture column
+    # needs the gross partition too and degrades to '-' on the VPS (verified: 39 broker
+    # rows, no traceback, summary intact).
+    if python3 "${ROOT}/scripts/build_universe.py" --no-discover >>"$LOG" 2>&1 \
+       && python3 "${ROOT}/scripts/build_broker_board.py" >>"$LOG" 2>&1; then
+        BRK_SUMMARY="$(python3 "${ROOT}/scripts/build_broker_board.py" --summary \
+                        2>>"$LOG")"
         [[ -n "$BRK_SUMMARY" ]] && BRK_OK=true
         if [[ -n "$(git status --porcelain docs/brokers.html)" ]]; then
-            if git add docs/brokers.html                && git commit -q -m "Broker board ${DATE}" >>"$LOG" 2>&1                && git push -q origin main >>"$LOG" 2>&1; then
+            if git add docs/brokers.html \
+               && git commit -q -m "Broker board ${DATE}" >>"$LOG" 2>&1 \
+               && git push -q origin main >>"$LOG" 2>&1; then
                 log "broker board published"
             else
                 log "[!!] broker board built but NOT published"
@@ -200,7 +189,6 @@ fi
 set -e
 $MOM_OK && log "momentum board built" || log "[!!] momentum board NOT built"
 $BRK_OK && log "broker board built" || log "[!] broker board NOT built"
-$ACC_OK && log "accumulation board built" || log "[!] accumulation board NOT built"
 
 # --output-format json wraps the reply; fall back to raw output if it isn't JSON
 # (e.g. an auth error printed as plain text).
@@ -268,12 +256,13 @@ elif ! grep -q "session " "${ROOT}/docs/momentum.html" 2>/dev/null; then
     WARN+=("docs/momentum.html has no session line — it may be stale")
 fi
 
-# 6b. The accumulation board is observation-mode and unvalidated, so it warns and never
-# fails the run. An empty board is a real state (no gross partition yet), not an error.
-if ! $ACC_OK; then
-    WARN+=("accumulation board not rebuilt — see the log")
-elif ! grep -q "${DATE}" "${ROOT}/docs/accumulation.html" 2>/dev/null      && ! grep -q "IDX Accumulation" "${ROOT}/docs/accumulation.html" 2>/dev/null; then
-    WARN+=("docs/accumulation.html looks stale")
+# 6b. The broker board is descriptive and makes no predictive claim, so it warns and
+# never fails the run. It has no session line to check — the page carries a build date
+# rather than a signal date — so the freshness test is just that the file changed.
+if ! $BRK_OK; then
+    WARN+=("broker board not rebuilt — see the log")
+elif ! grep -q "IDX Broker Behaviour" "${ROOT}/docs/brokers.html" 2>/dev/null; then
+    WARN+=("docs/brokers.html looks malformed")
 fi
 
 for w in ${WARN[@]+"${WARN[@]}"};  do log "[warn] $w"; done
@@ -318,17 +307,9 @@ if [[ -n "$MOM_SUMMARY" ]]; then
 ${MOM_SUMMARY}"
 fi
 
-# The accumulation board rides in the same message as the other two. notify_telegram.py
-# chunks at 3800 chars on line boundaries, so three boards in one text is safe; three
-# separate notifications at 07:00 would not be.
-ACCTEXT=""
-if [[ -n "$ACC_SUMMARY" ]]; then
-    ACCTEXT="
-
-------------------------------
-${ACC_SUMMARY}"
-fi
-
+# The broker board rides in the same message as the crowded and momentum boards.
+# notify_telegram.py chunks at 3800 chars on line boundaries, so three sections in one
+# text is safe; three separate notifications at 07:00 would not be.
 BRKTEXT=""
 if [[ -n "$BRK_SUMMARY" ]]; then
     BRKTEXT="
@@ -342,7 +323,7 @@ if $OK; then
     notify --title "IDX screener — ${DATE}" \
            --text "${SUMMARY}
 
-Board: ${SITE}${MOMTEXT}${ACCTEXT}${BRKTEXT}${WARNTEXT}"
+Board: ${SITE}${MOMTEXT}${BRKTEXT}${WARNTEXT}"
     log "=== run ok ==="
 else
     REASON=""
