@@ -49,7 +49,7 @@ from position_book import rebuild as book_state  # noqa: E402
 from trade_lib import (SHARES_PER_LOT, RiskConfig, admit, atr_series, beta,  # noqa: E402
                        config_from_env, low_n_prior, market_exposure,
                        portfolio_heat, round_tick, rvol1_series, size_position,
-                       stop_price)
+                       split_lots, stop_price)
 
 WIB = timezone(timedelta(hours=7))
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,6 +65,40 @@ def rupiah(x: float) -> str:
     if abs(x) >= 1e6:
         return f"Rp{x / 1e6:.1f}m"
     return f"Rp{x:,.0f}"
+
+
+MFE = PANEL / "mfe_study.json"
+
+
+def load_base_rates() -> list[dict]:
+    """The conditional table from mfe_study.py, for the hold-confidence panel.
+
+    Survival-conditioned by construction (a trade only "reached +2R" if it was not
+    stopped first), so the panel says "trades that got here" and never "your trade
+    will". It is a base rate offered against fear, not a forecast.
+    """
+    if not MFE.exists():
+        return []
+    d = json.loads(MFE.read_text(encoding="utf-8"))
+    return [c for c in d.get("conditional", [])
+            if c.get("horizon") == "incumbent" and c.get("basis") == "cl"
+            and c.get("cohort") == "all" and c.get("kind") == "R"
+            and c.get("n_reached")]
+
+
+def base_rate_for(rates: list[dict], R) -> dict | None:
+    """The highest threshold the position has actually cleared."""
+    if R is None or not rates:
+        return None
+    ok = [c for c in rates if R >= c["threshold"]]
+    if not ok:
+        return None
+    c = max(ok, key=lambda x: x["threshold"])
+    return {"level": c["threshold"], "n": c["n_reached"],
+            "post_touch_R_median": c["post_touch_R_median"],
+            "post_touch_R_mean": c["post_touch_R_mean"],
+            "gave_it_all_back": c["frac_gave_it_all_back"],
+            "finished_above": c["frac_finished_above_threshold"]}
 
 
 def diagnostics(row: dict, rv1, hod_in_or=None) -> list[str]:
@@ -105,18 +139,41 @@ def build(p: Panel, session: str, cfg: RiskConfig) -> dict:
            "rules": {"stop": "1.5*ATR14, widened to the 5-session low only within "
                              "2.5 ATR; NEVER the prior-day low",
                      "exit": "E1 hard stop, or E2 close below the 5-session low",
-                     "tier": "VALIDATED (n=915, 2y, 3/4 folds, +0.82pp like-for-like)"}}
+                     "entry": "ONE SHOT, full size, at the close. Layered bids were "
+                              "tested and lost on every measure; the abandoning "
+                              "variants sat at the 0th-2nd percentile of random.",
+                     "scale": f"sell {cfg.scale_fraction:.0%} at "
+                              f"+{cfg.scale_level_r:g}R, run the rest on E1/E2",
+                     "scale_cost_bp": -31.9,
+                     "tier": "stop VALIDATED for the TAIL (n=1088, 2y, 3/4 folds; "
+                             "worst trade -2.9R vs -4.7R unstopped). Mean edge "
+                             "+0.64pp, 95% CI [-0.06,+1.37] - straddles zero. "
+                             "The scale leg is a PRICED COST, not an edge."}}
 
+    base_rates = load_base_rates()
     for pos in positions:
         sym = pos["symbol"]
         px = (p.raw_close.get(sym) or {}).get(i)
         l5 = low_n_prior(p, sym, i, cfg.struct_lookback)
+        a_pos = atr_series(p, sym).get(i)
+        r_ps = pos["entry_px"] - pos["stop_px"]
+        R = ((px - pos["entry_px"]) * pos["lots"] * SHARES_PER_LOT / pos["r_idr"]) \
+            if px and pos.get("r_idr") else None
+        tgt = round_tick(pos["entry_px"] + cfg.scale_level_r * r_ps, "up") if r_ps > 0 else None
+        sold, keep = split_lots(pos["lots"], cfg.scale_fraction)
         out["open"].append({
             "symbol": sym, "lots": pos["lots"], "entry_px": pos["entry_px"],
-            "stop_px": pos["stop_px"], "mark": px, "lo_5d": l5,
-            "R": ((px - pos["entry_px"]) * pos["lots"] * SHARES_PER_LOT / pos["r_idr"])
-                 if px and pos.get("r_idr") else None,
-            "e2_armed": bool(px and l5 and px < l5)})
+            "stop_px": pos["stop_px"], "mark": px, "lo_5d": l5, "R": R,
+            "e2_armed": bool(px and l5 and px < l5),
+            # The hold-confidence block. Everything here exists to make holding a
+            # decision rather than a nerve test: how far the exit actually is, and
+            # what happened historically to trades that got this far.
+            "scale_target": tgt, "scale_lots": sold, "scale_keep": keep,
+            "scale_done": pos["lots"] < pos.get("lots_initial", pos["lots"]),
+            "e2_gap_pct": ((px - l5) / px) if (px and l5) else None,
+            "e2_gap_atr": ((px - l5) / a_pos) if (px and l5 and a_pos) else None,
+            "stop_gap_pct": ((px - pos["stop_px"]) / px) if px else None,
+            "base_rate": base_rate_for(base_rates, R)})
 
     atrs = {r["symbol"]: atr_series(p, r["symbol"]) for r in rows}
     rv1s = {r["symbol"]: rvol1_series(p, r["symbol"]) for r in rows}
@@ -156,7 +213,12 @@ def build(p: Panel, session: str, cfg: RiskConfig) -> dict:
                 # reference means the same stop is a materially worse trade, and the
                 # intraday study found no way to time the fill better than this.
                 "entry_lo": round_tick(ref - 0.25 * a, "down"),
-                "entry_hi": round_tick(ref + 0.5 * a, "up")}
+                "entry_hi": round_tick(ref + 0.5 * a, "up"),
+                # Where the scale leg would sit if this fills at the reference. A
+                # cost, not a target — printed so the level is decided before the
+                # position exists rather than in the moment.
+                "scale_target": round_tick(ref + cfg.scale_level_r * (ref - stop), "up"),
+                "scale_lots": split_lots(s["lots"], cfg.scale_fraction)[0]}
         cand["diagnostics"] = diagnostics(r, cand["rvol1"])
         sized.append(cand)
 
@@ -191,8 +253,30 @@ def summary_text(plan: dict, cfg: RiskConfig, warn: list[str]) -> str:
         L.append("  (flat)")
     for o in plan["open"]:
         r = f"{o['R']:+.2f}R" if o["R"] is not None else "n/a"
+        # A held name need not be in the panel: the panel is a 161-name research
+        # universe, the book is whatever was actually bought. Print it and say the
+        # mark is missing rather than crashing the whole plan on one symbol.
+        mk = f"{o['mark']:,.0f}" if o["mark"] is not None else "n/a (not in panel)"
         L.append(f"  {o['symbol']} {o['lots']} lots @{o['entry_px']:,.0f} "
-                 f"stop {o['stop_px']:,.0f} | mark {o['mark']:,.0f} {r}")
+                 f"stop {o['stop_px']:,.0f} | mark {mk} {r}")
+        # WHY IT IS STILL OPEN. The exit is a level, and how far away it is settles
+        # the argument the trader is actually having with themselves at 15:00.
+        if o.get("e2_gap_pct") is not None:
+            L.append(f"    exit levels: stop {o['stop_px']:,.0f} "
+                     f"({o['stop_gap_pct']:+.1%}) | E2 floor {o['lo_5d']:,.0f} "
+                     f"({o['e2_gap_pct']:+.1%}, {o['e2_gap_atr']:.1f} ATR below)")
+        if o.get("scale_target") and not o.get("scale_done"):
+            hit = o["mark"] and o["mark"] >= o["scale_target"]
+            L.append(f"    scale: sell {o['scale_lots']} of {o['lots']} lots at "
+                     f"{o['scale_target']:,.0f} (+{cfg.scale_level_r:g}R)"
+                     f"{'  <- REACHED' if hit else ''}, keep {o['scale_keep']}")
+        br = o.get("base_rate")
+        if br:
+            L.append(f"    base rate: of {br['n']} trades that reached "
+                     f"+{br['level']:g}R, median earned a further "
+                     f"{br['post_touch_R_median']:+.2f}R; "
+                     f"{br['finished_above']:.0%} finished at or above it, "
+                     f"{br['gave_it_all_back']:.0%} gave it all back")
         if o["e2_armed"]:
             L.append(f"    [!!] below the 5-session low ({o['lo_5d']:,.0f}) - "
                      f"E2 exit armed, sell at tomorrow's open")
@@ -229,7 +313,10 @@ def summary_text(plan: dict, cfg: RiskConfig, warn: list[str]) -> str:
     L.append(f"if all taken: heat {plan.get('heat_after', 0):.2%} of {cfg.heat_cap_pct:.1%} "
              f"| beta-gross {plan.get('beta_gross_after', 0):.2f} of {cfg.beta_gross_cap:.2f}")
     L.append("Stop = 1.5x ATR, never the prior-day low. Exit on a CLOSE below the")
-    L.append("5-session low. VALIDATED n=915 2y 3/4 folds. Diagnostics gate nothing:")
+    L.append("5-session low. n=1088 2y 3/4 folds; bought for the TAIL (worst -2.9R vs")
+    L.append("-4.7R unstopped) - the mean edge +0.64pp has a CI that includes zero.")
+    L.append(f"Scale {cfg.scale_fraction:.0%} at +{cfg.scale_level_r:g}R costs 32bp:")
+    L.append("a priced choice for holding the rest, NOT an edge. Diagnostics gate nothing:")
     L.append("tested as filters, they were worse than random.")
     for w in warn:
         L.append(f"[warn] {w}")

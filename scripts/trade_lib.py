@@ -270,6 +270,12 @@ class RiskConfig:
     fee_buy: float = 0.0015
     fee_sell: float = 0.0025
     struct_lookback: int = 5
+    # Profit-taking leg. NOT an edge — measured at -31.9bp of mean excess (95% CI
+    # -13.0 to -52.1) across 1,088 trades, bought deliberately for regret control
+    # inside a declared 40bp budget. See reference/exits.md §1. A full exit at the
+    # same level costs -95.6bp, and holding to E2 is what the evidence prefers.
+    scale_fraction: float = 1 / 3
+    scale_level_r: float = 2.0
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -329,6 +335,18 @@ def config_from_env() -> tuple["RiskConfig", list[str]]:
         cfg.notional_min_idr = float(env["TRADE_NOTIONAL_MIN_IDR"])
     if env.get("TRADE_NOTIONAL_MAX_IDR"):
         cfg.notional_max_idr = float(env["TRADE_NOTIONAL_MAX_IDR"])
+    # Slot and heat caps became env-settable on 2026-08-15: portfolio_sim showed that
+    # at 0.5% risk the book runs ~3 names and the 5-slot cap binds on 37% of days,
+    # where at 1.5% it averaged 2.3 names and bound on 7%. The cap only becomes a
+    # live constraint at small size, so it stops being a constant nobody touches.
+    if env.get("TRADE_MAX_OPEN"):
+        cfg.max_open = int(env["TRADE_MAX_OPEN"])
+    if env.get("TRADE_HEAT_CAP_PCT"):
+        cfg.heat_cap_pct = float(env["TRADE_HEAT_CAP_PCT"])
+    if env.get("TRADE_SCALE_FRACTION"):
+        cfg.scale_fraction = float(env["TRADE_SCALE_FRACTION"])
+    if env.get("TRADE_SCALE_LEVEL_R"):
+        cfg.scale_level_r = float(env["TRADE_SCALE_LEVEL_R"])
     return cfg, warn
 
 
@@ -524,6 +542,92 @@ def breakeven_stop(entry_px: float, cfg: RiskConfig) -> int:
     """Entry plus round-trip costs, rounded UP to a tick: a stop that actually breaks
     even rather than one that breaks even before fees and loses after them."""
     return round_tick(entry_px * (1 + cfg.fee_buy + cfg.fee_sell), "up")
+
+
+# ------------------------------------------------------------------- profit-taking legs
+
+@dataclass(frozen=True)
+class LegPlan:
+    """A profit-taking leg: sell `fraction` when price reaches `level`.
+
+    kind="scale" leaves the remainder running on E1/E2. kind="full" closes the line
+    and requires fraction == 1.0 — the two are the same machine, and keeping them one
+    dataclass is what makes "is a partial better than a full exit at the same level?"
+    a comparison rather than two separate studies.
+
+    `level` is read against `trigger`: "R" multiples of the frozen risk-per-share, or
+    "ATR" multiples of ATR14 at entry. Both are measured from the ENTRY price.
+    """
+    kind: str = "scale"        # "scale" | "full"
+    trigger: str = "R"         # "R" | "ATR"
+    level: float = 2.0
+    fraction: float = 0.5
+    fill: str = "limit_intraday"   # "limit_intraday" | "next_open" | "next_close"
+    label: str = ""
+
+    def __post_init__(self):
+        if self.kind == "full" and self.fraction != 1.0:
+            raise ValueError("a 'full' leg must sell the whole position")
+        if not 0 < self.fraction <= 1.0:
+            raise ValueError(f"fraction must be in (0, 1]: {self.fraction}")
+
+
+def target_price(entry: float, r_ps: float, atr14: float, plan: LegPlan) -> int:
+    """The price the leg triggers at, snapped UP to a valid tick.
+
+    UP is the pessimistic direction for a SELLER: it demands price reach a strictly
+    higher level than the raw target, so the fill is never assumed on a bar that only
+    grazed it. Same convention trade_plan.py uses for entry_hi.
+    """
+    raw = entry + plan.level * (r_ps if plan.trigger == "R" else atr14)
+    return round_tick(raw, "up")
+
+
+def split_lots(lots: int, fraction: float) -> tuple[int, int]:
+    """(sold, remainder) respecting whole lots. (0, lots) means 'cannot be split'.
+
+    The SOLD leg floors, so the remainder never rounds up: selling more than intended
+    is a sizing error wearing a rounding costume. A 1-lot position cannot scale at
+    all, which is why size_position flags NO_SCALE below 2 lots.
+    """
+    if lots < 2 or not 0 < fraction < 1:
+        return 0, lots
+    sold = math.floor(lots * fraction)
+    if sold < 1 or lots - sold < 1:
+        return 0, lots
+    return sold, lots - sold
+
+
+def blend_r(legs: list[tuple[float, float]], entry: float, r_ps: float,
+            cost: float) -> float:
+    """R of a multi-leg exit. legs = [(weight, exit_px), ...], weights summing to 1.
+
+    Weights are fractions of the ORIGINAL position and r_ps is the risk-per-share
+    FROZEN AT OPEN. Neither is ever rescaled by what remains — rescaling makes R
+    incomparable across configurations, which is the same trap that made the
+    prior-low stop's meanR look twice as good as the ATR stop's while earning less.
+
+    Fees need no special case: fee_buy is proportional to the fraction bought, so the
+    per-share form is already exact and collapses to the single-leg expression at
+    weight 1.
+    """
+    if r_ps <= 0:
+        return 0.0
+    return sum(w * (px - entry - entry * cost) for w, px in legs) / r_ps
+
+
+def blend_excess(legs: list[tuple[float, float, float]], entry: float,
+                 cost: float) -> float:
+    """Excess-over-benchmark of a multi-leg exit.
+
+    legs = [(weight, exit_px, bench_return_for_THAT_leg), ...].
+
+    The per-leg benchmark is the point. A scale leg exits earlier and therefore faces
+    a SHORTER index window; charging it the full holding period's market move credits
+    it with returns it never carried, and the error's sign follows the index rather
+    than cancelling.
+    """
+    return sum(w * ((px / entry - 1) - cost - b) for w, px, b in legs)
 
 
 # ---------------------------------------------------------------- portfolio exposure
@@ -750,6 +854,43 @@ def _selftest() -> int:
         print(f"  beta({sym}) = {b:.2f}" if b else f"  beta({sym}) = None")
     c = corr(p, "GGRM", "ISAT", i)
     print(f"  corr(GGRM,ISAT) = {c:.2f}" if c is not None else "  corr = None")
+
+    print("profit legs — lot splitting floors the SOLD side")
+    check("1 lot cannot scale", split_lots(1, 0.5), (0, 1))
+    check("2 lots split evenly", split_lots(2, 0.5), (1, 1))
+    check("3 lots sell 1 keep 2", split_lots(3, 0.5), (1, 2))
+    check("3 lots at 2/3 sell 2", split_lots(3, 2 / 3), (2, 1))
+    check("10 lots at 1/3 sell 3", split_lots(10, 1 / 3), (3, 7))
+    check("fraction 1.0 is not a split", split_lots(10, 1.0), (0, 10))
+
+    print("profit legs — target snaps UP to a tick and never below the raw level")
+    tp = target_price(2200, 150.0, 100.0, LegPlan(level=2.0, trigger="R"))
+    check("ISAT +2R target", tp, 2500)
+    check("target is on the ladder", tp % tick_size(tp), 0)
+    tp2 = target_price(2200, 150.0, 100.0, LegPlan(level=1.7, trigger="R"))
+    check("+1.7R rounds UP not near", tp2, 2460)   # raw 2455 -> up to 2460
+    check("target >= raw level", 1 if tp2 >= 2200 + 1.7 * 150 else 0, 1)
+    tpa = target_price(2200, 150.0, 100.0, LegPlan(level=3.0, trigger="ATR"))
+    check("+3 ATR target", tpa, 2500)
+
+    print("profit legs — blended R collapses EXACTLY to the single-leg form")
+    ent_, rps_, cst_ = 2200.0, 150.0, 0.002
+    single = (2500 - ent_ - ent_ * cst_) / rps_
+    # exact float equality, not isclose: a generalisation that reorders the arithmetic
+    # is precisely the bug this assertion exists to catch.
+    check("one leg at w=1", blend_r([(1.0, 2500.0)], ent_, rps_, cst_) == single, True)
+    check("two legs at one price", blend_r([(0.5, 2500.0), (0.5, 2500.0)],
+                                           ent_, rps_, cst_) == single, True)
+    half = blend_r([(0.5, 2500.0), (0.5, 2050.0)], ent_, rps_, cst_)
+    check("scale half at +2R, half stopped", round(half, 4), round(
+        0.5 * single + 0.5 * (2050 - ent_ - ent_ * cst_) / rps_, 4))
+    check("blend_r ignores a later stop change",
+          blend_r([(0.5, 2500.0), (0.5, 2050.0)], ent_, rps_, cst_) == half, True)
+
+    print("profit legs — excess uses a PER-LEG benchmark window")
+    xa = blend_excess([(0.5, 2500.0, 0.01), (0.5, 2400.0, 0.03)], ent_, cst_)
+    xb = blend_excess([(0.5, 2500.0, 0.03), (0.5, 2400.0, 0.03)], ent_, cst_)
+    check("shorter window for the early leg matters", round(xa - xb, 6), round(0.5 * 0.02, 6))
 
     print()
     if fails:

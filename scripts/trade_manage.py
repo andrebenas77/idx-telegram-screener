@@ -134,7 +134,7 @@ def summary_text(rows: list[dict], day: str, cfg: RiskConfig) -> str:
         L.append(ctx)
         L.append("")
     L.append("-" * 30)
-    L.append("Verdict uses E1/E2 only (VALIDATED n=915, 2y). Context lines were")
+    L.append("Verdict uses E1/E2 only (n=1088, 2y, 3/4 folds). Context lines were")
     L.append("tested as rules and rejected - they inform your judgement, not the call.")
     return "\n".join(L)
 

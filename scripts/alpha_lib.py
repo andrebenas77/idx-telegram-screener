@@ -21,7 +21,10 @@ from __future__ import annotations
 
 import csv
 import gzip
+import hashlib
 import math
+import random
+import statistics
 from collections import defaultdict
 from pathlib import Path
 
@@ -59,6 +62,80 @@ def median(xs) -> float:
     return xs[m] if len(xs) % 2 else (xs[m - 1] + xs[m]) / 2
 
 
+def block_ci(values, n_boot: int = 2000, block: int | None = None,
+             seed: int = 7) -> dict:
+    """Circular moving-block bootstrap CI for the mean of a TIME-ORDERED series.
+
+    Never a z-test. Momentum events cluster heavily in time and share market
+    exposure, so independence is badly violated and a naive standard error is far
+    too small — the same data gave z = -3.47 ("decisive") against a block bootstrap
+    reading of 5.2% ("a 1-in-20 stretch, unremarkable"). dedup_audit.block_bootstrap
+    applies the same reasoning to the "is the recent window unusual" question; this
+    is the interval form, for putting a band on any mean or any PAIRED difference.
+
+    `values` MUST already be in time order. A shuffled input silently degrades this
+    to an iid bootstrap and reports a band roughly sqrt(block) times too narrow —
+    the failure looks like a result, not an error.
+
+    Blocks wrap circularly so every observation has equal weight; with truncation the
+    first and last `block` points are undersampled and the tails get pulled inward.
+    """
+    xs = [float(v) for v in values if v is not None]
+    n = len(xs)
+    if n < 8:
+        return {"n": n, "mean": statistics.fmean(xs) if xs else 0.0,
+                "lo95": None, "hi95": None, "se": None, "block": None}
+    if block is None:
+        block = max(1, math.ceil(n ** (1 / 3)))
+    block = max(1, min(block, n))
+    nblocks = math.ceil(n / block)
+    rng = random.Random(seed)
+    total = nblocks * block
+    means = []
+    for _ in range(n_boot):
+        acc = 0.0
+        for _ in range(nblocks):
+            s = rng.randrange(n)
+            for t in range(block):
+                acc += xs[(s + t) % n]
+
+        means.append(acc / total)
+    means.sort()
+    return {"n": n, "mean": statistics.fmean(xs),
+            "lo95": means[int(0.025 * n_boot)],
+            "hi95": means[min(n_boot - 1, int(0.975 * n_boot))],
+            "se": statistics.pstdev(means), "block": block}
+
+
+def ci_clear_of_zero(ci: dict) -> bool:
+    """True when the 95% band excludes zero — i.e. the sign is readable.
+
+    Used as the ship/kill gate everywhere in the exit work, so that "improved by
+    +0.3pp" cannot be reported as a win when the band runs -1.1pp to +1.7pp.
+    """
+    lo, hi = ci.get("lo95"), ci.get("hi95")
+    return lo is not None and hi is not None and (lo > 0 or hi < 0)
+
+
+def panel_fingerprint(panel_dir: Path = PANEL) -> dict:
+    """Identity of the data a result was computed on.
+
+    A golden file is only comparable to a run over the SAME panel. The panel grew
+    from 112 to 161 symbols mid-project and the stored trade_backtest.json (n=915)
+    silently stopped describing the code that produced it. Every result JSON carries
+    this, and --regress refuses to diff across a mismatch.
+    """
+    h = hashlib.sha256()
+    files = sorted(panel_dir.glob("prices-*.csv.gz")) + \
+        sorted(panel_dir.glob("flows-*.csv.gz"))
+    for f in files:
+        st = f.stat()
+        h.update(f"{f.name}:{st.st_size}:{int(st.st_mtime)}".encode())
+    return {"n_price_files": len(list(panel_dir.glob("prices-*.csv.gz"))),
+            "n_flow_files": len(list(panel_dir.glob("flows-*.csv.gz"))),
+            "sha": h.hexdigest()[:12]}
+
+
 def summarise(excess: list[float]) -> dict:
     """Hit rate (+ Wilson bound), mean and median excess for a set of events."""
     n = len(excess)
@@ -93,6 +170,15 @@ class Panel:
         self.high: dict[str, dict[int, float]] = {}
         self.low: dict[str, dict[int, float]] = {}
         self.raw_close: dict[str, dict[int, float]] = {}
+        # RAW open. Present in prices-*.csv.gz on every row and, until 2026-08-15,
+        # never parsed — so a stop gapped through overnight was filled at the PRIOR
+        # CLOSE as a proxy. Measured across 29,028 stop episodes that proxy is
+        # optimistic on 8.9% of them and pessimistic on 0.0%: a one-sided flattery of
+        # exactly the violent days a stop exists for. Clamped into [low, high]; see
+        # n_open_clamped.
+        self.open: dict[str, dict[int, float]] = {}
+        self.n_open_clamped = 0
+        self.n_open_rows = 0
         self.adtv: dict[str, dict[int, float]] = {}       # sym -> {i: 20d mean turnover}
         self.bench: dict[int, float] = {}
         self.flows: dict[tuple[str, str], list[tuple[int, float]]] = {}
@@ -111,14 +197,19 @@ class Panel:
                         rawcl = float(r["close"])
                         hi = float(r["high"]) if r.get("high") else None
                         lo = float(r["low"]) if r.get("low") else None
+                        op = float(r["open"]) if r.get("open") else None
                     except (TypeError, ValueError):
                         continue
                     if cl <= 0:
                         continue
+                    if op is not None and op <= 0:
+                        op = None
                     # Turnover uses RAW price x volume: that is the actual rupiah
                     # traded on the day. Adjusted prices are for returns only — using
                     # them here would understate pre-split liquidity by the split ratio.
-                    raw[r["symbol"]][r["date"]] = (cl, rawcl * vol, vol, hi, lo, rawcl)
+                    # `op` is APPENDED at index 6 — v[3]/v[4]/v[5] are load-bearing
+                    # below and renumbering them would silently swap high for low.
+                    raw[r["symbol"]][r["date"]] = (cl, rawcl * vol, vol, hi, lo, rawcl, op)
                     alldates.add(r["date"])
 
         self.dates = sorted(alldates)
@@ -135,6 +226,26 @@ class Panel:
             self.low[sym] = {self.didx[d]: v[4] for d, v in series.items()
                              if v[4] is not None}
             self.raw_close[sym] = {self.didx[d]: v[5] for d, v in series.items()}
+            # Opens, CLAMPED into the session's own [low, high]. 1.75% of rows print an
+            # open outside that range (a pre-opening auction artefact — the same
+            # phenomenon intraday_lib documents from the other side). The alternative,
+            # dropping them back to the prior close, re-imports the optimistic fill on
+            # precisely the gap days this series exists to price honestly. Clamping is
+            # the conservative reading and it is counted, not hidden.
+            ops = {}
+            for d, v in series.items():
+                if v[6] is None:
+                    continue
+                i = self.didx[d]
+                o, hi_, lo_ = v[6], v[3], v[4]
+                if hi_ is not None and lo_ is not None and hi_ >= lo_:
+                    c = min(max(o, lo_), hi_)
+                    if c != o:
+                        self.n_open_clamped += 1
+                    o = c
+                self.n_open_rows += 1
+                ops[i] = o
+            self.open[sym] = ops
             # Trailing 20-session average turnover, strictly BEFORE the day itself so
             # the liquidity filter never peeks at the day being evaluated.
             idxs = sorted(tn)
@@ -198,7 +309,14 @@ class Panel:
         return stock - market
 
     def describe(self) -> str:
+        # Open coverage is printed because a silently EMPTY open series would not
+        # raise anywhere — it would just fall back to the prior-close proxy on every
+        # gap and reproduce the old numbers, which reads as "the change did nothing".
+        n_open = sum(len(v) for v in self.open.values())
+        n_close = sum(len(v) for v in self.raw_close.values())
+        cov = 100.0 * n_open / n_close if n_close else 0.0
         return (f"{len(self.dates)} trading days | {len(self.close)} symbols | "
                 f"{len({b for _, b in self.flows})} brokers | "
                 f"{sum(len(v) for v in self.flows.values()):,} flow rows | "
-                f"{len(self.bench)} benchmark days")
+                f"{len(self.bench)} benchmark days | "
+                f"opens {n_open:,} ({cov:.1f}%), {self.n_open_clamped:,} clamped")

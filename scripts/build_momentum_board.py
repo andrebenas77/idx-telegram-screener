@@ -83,6 +83,11 @@ RVOL_MIN, RVOL_MAX = 1.5, 3.0
 DD_MIN, RSI_MIN = -0.10, 55.0
 EXHAUST_RVOL = 3.0
 
+# Minimum share of panel symbols that must carry a bar before a session is scoreable.
+# Well below the ~98% a healthy backfill produces, and far above the 1.2% that
+# silently published an empty board on 2026-08-13.
+MIN_COVERAGE = 0.50
+
 # Top N by ADTV counts as Tier A; the rest are second-liners.
 # 50, not 100: the tracked universe is ~113 already-liquid names, so a top-100 boundary
 # left Tier B with 12 stragglers and the split conveyed nothing. 50 actually separates
@@ -307,8 +312,32 @@ def main() -> int:
     if i is None:
         print(f"{args.date} is not a trading day in the panel", file=sys.stderr)
         return 1
+
+    # COVERAGE GATE. A partially-backfilled session produces an EMPTY board and no
+    # error, which reads as "nothing qualified today" when the truth is "there is no
+    # data today". On 2026-08-13 the panel carried 2 bars of 161 and 37 flow rows
+    # against a ~158/2,600 norm, and the published board said "No candidates" — an
+    # absence of data wearing the costume of an absence of opportunity.
+    #
+    # Falls BACK to the last well-covered session rather than failing, because a
+    # board one day stale and labelled as such is more useful at 07:15 than no board.
+    def coverage(k: int) -> float:
+        return sum(1 for s in p.raw_close if k in p.raw_close[s]) / max(1, len(p.raw_close))
+
+    if not args.date:
+        while i > 0 and coverage(i) < MIN_COVERAGE:
+            log(f"[warn] {p.dates[i]} has only {coverage(i):.1%} of symbols "
+                f"(need {MIN_COVERAGE:.0%}) — panel not backfilled; stepping back")
+            i -= 1
+    cov = coverage(i)
+    stale = (i != len(p.dates) - 1)
+    if cov < MIN_COVERAGE:
+        print(f"[!!] no session with >= {MIN_COVERAGE:.0%} coverage — "
+              f"run backfill_panel.py", file=sys.stderr)
+        return 1
     session = p.dates[i]
-    log(f"building board for {session}")
+    log(f"building board for {session} (coverage {cov:.1%}"
+        f"{', PANEL IS STALE — latest session is ' + p.dates[-1] if stale else ''})")
 
     # Broker ranking, scored on MEAN EXCESS — the objective that survived walk-forward.
     events = build_events(p, MIN_VALUE, MIN_ADTV_PCT)
