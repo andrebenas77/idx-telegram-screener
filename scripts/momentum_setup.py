@@ -16,8 +16,21 @@ Two defences here:
 
 Reported on mean excess, market-adjusted vs IHSG, with the one-session entry lag.
 
+COUNTING: `--dedupe` COLLAPSES TO ONE ROW PER STOCK-DAY, and you should usually pass it.
+    build_events() emits one row per (broker, symbol, day), which is right for the
+    broker-ranking question it was written for and wrong here — this script asks a
+    STOCK-level question, and a stock-day on which four brokers qualified contributes four
+    rows carrying the identical forward return. On the current panel that is 46% duplicate
+    outcomes inside the momentum subset.
+
+    The original validation in this file did NOT dedupe. It was re-audited on 2026-08-14
+    (see dedup_audit.py) and the edge survives: 5d lift +1.55pp per broker-day against
+    +1.37pp per stock-day, 4 of 4 sub-periods either way. What shrinks is the CONFIDENCE,
+    not the effect — every interval had been computed on roughly twice the true
+    independent n.
+
 Usage:
-    py scripts/momentum_setup.py [--periods 4] [--sweep]
+    py scripts/momentum_setup.py [--periods 4] [--sweep] [--dedupe]
 """
 from __future__ import annotations
 
@@ -29,7 +42,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from alpha_lib import PANEL, Panel, summarise  # noqa: E402
-from broker_alpha import build_events  # noqa: E402
+from broker_alpha import build_events, dedupe_stock_days  # noqa: E402
 from overlay_test import features  # noqa: E402
 
 
@@ -73,6 +86,9 @@ def main() -> int:
     ap.add_argument("--rsi-min", type=float, default=55.0)
     ap.add_argument("--periods", type=int, default=4)
     ap.add_argument("--sweep", action="store_true")
+    ap.add_argument("--dedupe", action="store_true",
+                    help="collapse to one row per stock-day (see the module "
+                         "docstring) — the correct counting for this question")
     args = ap.parse_args()
 
     print("loading panel…")
@@ -80,6 +96,10 @@ def main() -> int:
     print(f"  {p.describe()}")
 
     events = build_events(p, args.min_value, args.min_adtv_pct)
+    if args.dedupe:
+        n0 = len(events)
+        events = dedupe_stock_days(events)
+        print(f"  deduped {n0:,} broker-days -> {len(events):,} stock-days")
     kept = []
     for e in events:
         f = features(p, e["symbol"], e["i"])

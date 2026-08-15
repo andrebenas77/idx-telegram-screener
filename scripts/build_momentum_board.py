@@ -11,6 +11,35 @@ WHAT VALIDATED
   -> +0.96% (3d) / +1.40% (5d) mean excess over the accumulation baseline,
      positive in 4 of 4 sub-periods.
 
+  RE-AUDITED 2026-08-14 AND IT HOLDS. Those figures counted each stock-day once per
+  QUALIFYING BROKER, because broker_alpha.build_events() emits one row per
+  (broker, symbol, day) and momentum_setup.py consumed it without collapsing. On the
+  current 161-name panel that is 46% duplicate outcomes inside the momentum subset
+  (2,906 broker-days -> 1,567 stock-days). Duplication does two things: it tilts the
+  mean toward stock-days with broad broker participation, and it computes every
+  confidence interval on roughly twice the true independent n.
+
+  Re-run per STOCK-DAY (see dedup_audit.py):
+
+      lift over the accumulation baseline    broker-day      stock-day
+          k=3                                  +1.04pp         +0.93pp
+          k=5                                  +1.55pp         +1.37pp
+          k=10                                 +2.33pp         +2.25pp
+      sub-periods positive, k=5                   4/4             4/4
+
+  The edge survives a stricter count and the sub-period pattern is actually more even
+  deduped (+2.24/+1.13/+1.90/+0.02 against +1.14/+1.33/+2.48/+0.01). Keep trading it.
+
+  ONE THING THE DUPLICATION WAS ACCIDENTALLY ENCODING: participation breadth is
+  monotonic. Deduped, k=5, stock-days where the number of qualifying brokers was
+      1 broker   n=752  +1.45pp
+      2 brokers  n=473  +1.81pp
+      3+ brokers n=342  +3.29pp
+  Hit rate barely moves (50.8 / 52.4 / 52.9), so it is a tail effect, not a frequency
+  one. NOT a rule and NOT traded — it is a post-hoc observation from an audit, and this
+  repo has refuted six flow theses that looked at least this good before being tested
+  properly.
+
 WHAT INVERTED — shown as a separate AVOID list, not hidden
   The same accumulation with RVOL5 >= 3.0 produced -1.85% (3d) / -3.82% (5d) lift and a
   5-day hit rate of 19%. Blow-off volume marks exhaustion, not continuation.

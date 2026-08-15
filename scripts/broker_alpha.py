@@ -77,6 +77,59 @@ def build_events(p: Panel, min_value: float, min_adtv_pct: float,
     return events
 
 
+def dedupe_stock_days(events: list[dict]) -> list[dict]:
+    """Collapse (broker, symbol, day) events to ONE ROW PER (symbol, day).
+
+    build_events() above emits one row per qualifying BROKER, which is correct when the
+    question is "which brokers predict" — that is a broker-level question and each row is
+    a distinct broker's decision. It is WRONG whenever the question is about the STOCK,
+    because a stock-day on which four brokers qualified contributes four rows carrying the
+    identical forward return.
+
+    Measured on the current panel: 1,579 momentum events are only 871 unique stock-days,
+    so ~45% of rows are duplicate outcomes. That does two separate things, and only the
+    second is obvious:
+
+      1. WEIGHTING BIAS. The mean is tilted toward stock-days with broad broker
+         participation. This can move an estimate in EITHER direction — it is not
+         automatically conservative.
+      2. OVERSTATED CONFIDENCE. Standard errors, Wilson bounds and sub-period stability
+         are all computed on roughly twice the true independent count.
+
+    The collapse is lossless for stock-level work: `is_momentum` reads only stock-level
+    features (rvol5, rsi, dd60) that are identical across brokers on the same stock-day,
+    and every forward return is unchanged. The broker-level part is only the qualifying
+    FILTER, so the natural stock-level event is "a stock-day on which at least one broker
+    met the accumulation filter".
+
+    `n_brokers` and `net_max` are carried through so participation breadth stays
+    answerable rather than being silently discarded — the duplication was accidentally
+    encoding it, in a biased way.
+    """
+    best: dict[tuple[str, int], dict] = {}
+    for e in events:
+        key = (e["symbol"], e["i"])
+        cur = best.get(key)
+        if cur is None:
+            row = dict(e)
+            row["n_brokers"] = 1
+            row["net_max"] = e.get("net", 0.0)
+            row["net_sum"] = e.get("net", 0.0)
+            best[key] = row
+            continue
+        cur["n_brokers"] += 1
+        cur["net_sum"] = cur.get("net_sum", 0.0) + e.get("net", 0.0)
+        if e.get("net", 0.0) > cur.get("net_max", 0.0):
+            # Keep the largest single broker's row as the representative, so `broker`
+            # and `adtv_pct` describe the desk that actually moved the name.
+            keep = {"n_brokers": cur["n_brokers"], "net_sum": cur["net_sum"]}
+            cur.clear()
+            cur.update(e)
+            cur.update(keep)
+            cur["net_max"] = e.get("net", 0.0)
+    return sorted(best.values(), key=lambda r: (r["i"], r["symbol"]))
+
+
 def score_brokers(events: list[dict], min_events: int = MIN_EVENTS,
                   by: str = "hit") -> list[dict]:
     """Rank brokers by weighted Wilson-bounded hit rate (`hit`) or mean excess (`mean`).

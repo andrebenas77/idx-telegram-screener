@@ -355,6 +355,70 @@ which is a useful measure of how little either number was worth.
 This is the control that was **vacuous** in the accumulation gate. Here identity is the
 feature, so it bit — twice.
 
+## 8b-ii. HIT RATE — the sixth failure (2026-08-14)
+
+Everything above measured **mean excess return**. Hit rate — the probability the stock is
+simply *up* — is a different statistic and had **never been tested here**. A signal can
+have one without the other, so it was worth asking.
+
+> Related but distinct: `broker_alpha.py` already refuted ranking **brokers** by hit rate
+> (−2.3%/−2.8% against +2.3%/+2.1% for mean). That is a different question from whether
+> composition sorts a **stock's** probability of rising, which is what follows.
+
+### No gradient — the shape is an inverted U
+
+Deciles by composition, k=5 hit rate: 39.9, 38.2, 63.1, 49.3, 66.7, 61.4, 60.8, 64.3,
+62.3, **38.7**. Both extremes are the worst cells and the middle is best. Terciles agree:
+MID beats HIGH on hit rate at every horizon while HIGH beats MID on mean — the two
+statistics are being driven by different things (frequency vs tail size).
+
+**Top-vs-bottom decile: −1.2pp at k=5, −8.0pp at k=3, −7.5pp at k=10** — the *wrong* sign
+against the mean story. **Wilson bounds do not separate at any horizon.**
+
+### The null is worse on hit rate than it was on the mean
+
+300 identity shuffles:
+
+| | real spread | null mean | null sd | exceedance |
+|---|---|---|---|---|
+| HIGH−LOW **hit rate**, k=5 | +6.85pp | **+3.69pp** | **6.30pp** | **30.7%** |
+| HIGH−LOW **mean**, k=5 | +3.36pp | ~0 | 1.64pp | — |
+
+**31% of random-identity shuffles produce a hit-rate spread at least as large as the real
+one**, which sits at roughly the 69th percentile of its own null. Signal-to-null is ~1.1
+against the mean's ~2.0. And the null is **not centred on zero** — a randomly relabelled
+cohort averages +3.69pp — so even the sign is partly mechanical: sorting on any
+gross-normalised weighted flow ratio sorts on flow structure regardless of who the brokers
+are.
+
+### It does not exist outside momentum names
+
+Across **4,284** top-20 stock-days (2.7× the momentum sample), HIGH−LOW is +1.3pp on hit
+and **−0.23pp on mean** — reversed and flat. D10−D1 is −1.3pp / −0.75pp. Baselines:
+broad universe +0.77pp / 49.1% versus momentum events +2.71pp / 54.5%. **The momentum
+filter, not the composition sort, is what carries the return.**
+
+### Direction of arrival does nothing
+
+Chasers arriving vs leaving (5-session change in composition): RISING − FALLING is
+**−1.7pp hit, −0.56pp mean**, and the middle group is worst on hit while best on mean —
+the signature of noise. The two interesting-looking 2×2 corners are both n<100 and are not
+findings.
+
+### Complexes cannot be tested at all
+
+PP generates **21** momentum events, Bakrie **30**, Trio **15** — 66 in total, with tercile
+cells of 2–22. Trio-HIGH prints +47.88pp on **n=2**. Flagged underpowered, reported as
+nothing. No realistic amount of extra data fixes this inside Invezgo's 2-year horizon, so
+the complexes stay on the board as **description only**.
+
+### Verdict
+
+**Sixth failure. Stopping.** After six searches on one dataset, a seventh is more likely to
+surface something that survived the search than something real. The complexes, the broker
+personalities and the universe fix remain worth publishing descriptively; none of it is a
+signal.
+
 ## 8c. The definedness floor, and a gate that was the wrong test
 
 **MIN_OBS was raised from 250 to 3,000**, and this nearly killed the primary definition
