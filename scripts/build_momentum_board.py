@@ -58,6 +58,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 import html
 import json
 import sys
@@ -87,6 +88,8 @@ EXHAUST_RVOL = 3.0
 # Well below the ~98% a healthy backfill produces, and far above the 1.2% that
 # silently published an empty board on 2026-08-13.
 MIN_COVERAGE = 0.50
+
+SECTORS: dict[str, str] = {}
 
 # Top N by ADTV counts as Tier A; the rest are second-liners.
 # 50, not 100: the tracked universe is ~113 already-liquid names, so a top-100 boundary
@@ -145,6 +148,24 @@ def build(p: Panel, i: int, alpha: dict) -> tuple[list, list]:
     return cands, exhaust
 
 
+def sectors() -> dict[str, str]:
+    """ticker -> sector, from the alias dictionary.
+
+    Emitted on every board row because `trade_lib.admit()` reads `sector` to enforce
+    max_per_sector, and the board never used to set it — so the cap silently never
+    fired. It surfaced on 2026-08-14, when the board returned ISAT and EXCL together:
+    both Telco, and a five-name book taking both is a sector bet the cap exists to
+    bound. A constraint that cannot evaluate is worse than no constraint, because the
+    plan reports it as satisfied.
+    """
+    f = ROOT / "reference" / "tickers.csv"
+    if not f.exists():
+        return {}
+    with f.open(encoding="utf-8") as fh:
+        return {r["ticker"].strip().upper(): (r.get("sector") or "").strip() or None
+                for r in csv.DictReader(fh) if r.get("ticker")}
+
+
 def collapse(rows: list) -> list:
     """One row per symbol, aggregating the brokers accumulating it."""
     by_sym: dict[str, dict] = {}
@@ -159,6 +180,7 @@ def collapse(rows: list) -> list:
         ranks = [b["broker_rank"] for b in s["brokers"] if b["broker_rank"]]
         s["best_rank"] = min(ranks) if ranks else None
         s["adtv_pct_total"] = 100.0 * s["net_total"] / s["adtv"] if s["adtv"] else 0
+        s["sector"] = SECTORS.get(s["symbol"])
         out.append(s)
     return out
 
@@ -336,6 +358,7 @@ def main() -> int:
               f"run backfill_panel.py", file=sys.stderr)
         return 1
     session = p.dates[i]
+    globals()["SECTORS"] = sectors()
     log(f"building board for {session} (coverage {cov:.1%}"
         f"{', PANEL IS STALE — latest session is ' + p.dates[-1] if stale else ''})")
 
