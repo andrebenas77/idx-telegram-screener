@@ -1,0 +1,55 @@
+[
+  {
+    "type": "equity",
+    "equity_idr": 1000000000.0,
+    "note": "harness book"
+  },
+  {
+    "type": "open",
+    "symbol": "BBCA",
+    "date": "2026-01-05",
+    "lots": 100,
+    "entry_px": 9000.0,
+    "fee_idr": 90000.0,
+    "stop_px": 8700.0,
+    "stop_basis": "atr1.5 from entry",
+    "atr14": null,
+    "r_idr": 3000000.0,
+    "intended_risk_idr": 5000000.0,
+    "sector": "Bank",
+    "beta": null,
+    "entry_rule": "board+size",
+    "plan_id": "2026-01-05:BBCA"
+  },
+  {
+    "type": "stop",
+    "symbol": "BBCA",
+    "stop_px": 8800.0,
+    "prev_stop_px": 8700.0,
+    "reason": "trail to breakeven"
+  },
+  {
+    "type": "scale",
+    "symbol": "BBCA",
+    "lots": -30,
+    "px": 9500.0,
+    "fee_idr": 28500.0,
+    "reason": "scale 1/3",
+    "realised_idr": 1471500.0,
+    "realised_r": 1.635
+  },
+  {
+    "type": "close",
+    "symbol": "BBCA",
+    "lots": -70,
+    "px": 9800.0,
+    "fee_idr": 68600.0,
+    "reason": "E2 structure",
+    "realised_idr": 5531400.0,
+    "realised_r": 2.634
+  },
+  {
+    "type": "note",
+    "text": "harness note, ignored by all math"
+  }
+]
