@@ -119,7 +119,13 @@ def run_contract() -> dict:
     'Read-only' describes intent, not behaviour — see TOUCHED. Anything they rewrite is
     restored from git before this returns.
     """
-    out = {}
+    # The board's output is a function of the PANEL, which is refreshed daily and
+    # legitimately changes the answer. So the contract records which panel produced it,
+    # and a comparison across different panels checks the exit code only — the same gate
+    # trade_backtest's --regress uses, for the same reason: diffing results computed on
+    # different data reports a regression that is really just Tuesday.
+    from alpha_lib import panel_fingerprint
+    out = {"_panel": panel_fingerprint()}
     try:
         for name, argv in CONTRACT_CMDS:
             r = subprocess.run([PY, str(SCRIPTS / argv[0]), *argv[1:]],
@@ -167,6 +173,8 @@ def main() -> int:
         print("running the read-only screener entry points...")
         contract = run_contract()
         for k, v in contract.items():
+            if k == "_panel":
+                continue
             n = len(v["stdout"].splitlines())
             print(f"  {k}: exit {v['rc']}, {n} lines")
 
@@ -187,12 +195,15 @@ def main() -> int:
 
     if contract is not None and CONTRACT.exists():
         gc = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        same_panel = gc.get("_panel") == contract.get("_panel")
+        if not same_panel:
+            print("  [note] panel differs from the golden — checking exit codes only")
         for k, v in contract.items():
-            if k not in gc:
+            if k == "_panel" or k not in gc:
                 continue
             if gc[k]["rc"] != v["rc"]:
                 problems.append(f"contract {k}: exit {gc[k]['rc']} -> {v['rc']}")
-            elif gc[k]["stdout"] != v["stdout"]:
+            elif same_panel and gc[k]["stdout"] != v["stdout"]:
                 problems.append(f"contract {k}: stdout changed "
                                 f"({len(gc[k]['stdout'])} -> {len(v['stdout'])} chars)")
 

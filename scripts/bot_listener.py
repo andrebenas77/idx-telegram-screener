@@ -30,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import bot_state  # noqa: E402
+import trade_bot  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 ENV = ROOT / "secrets" / ".env"
@@ -48,6 +49,15 @@ HELP = (
     "/help — this message\n\n"
     "The scheduled run fires automatically at 07:00 WIB on weekdays."
 )
+
+
+def trade_help() -> str:
+    """Screener help plus whatever the trade layer currently offers.
+
+    A function, not a constant, so the two halves cannot drift: when a write command is
+    enabled only trade_bot.HELP changes and this picks it up.
+    """
+    return trade_bot.HELP
 
 
 def log(msg):
@@ -226,15 +236,24 @@ def _handle(token, allowed_chat, msg):
     if not text.startswith("/"):
         return
 
-    cmd = text.split()[0].lstrip("/").split("@")[0].lower()
+    parts = text.split()
+    cmd = parts[0].lstrip("/").split("@")[0].lower()
+    args = parts[1:]          # previously discarded; /plan DMAS needs them
     if cmd == "run":
         trigger_run(token, chat_id)
     elif cmd == "status":
         send(token, chat_id, status_text())
     elif cmd in ("help", "start"):
-        send(token, chat_id, HELP)
+        send(token, chat_id, trade_help())
     else:
-        send(token, chat_id, f"Unknown command /{cmd}\n\n{HELP}")
+        # trade_bot owns the book commands. It returns None for anything it does not
+        # recognise, so an unknown command still falls through to help rather than
+        # being silently swallowed.
+        reply = trade_bot.dispatch(cmd, args)
+        if reply is None:
+            send(token, chat_id, "Unknown command /" + cmd + "\n\n" + trade_help())
+        else:
+            send(token, chat_id, reply)
 
 
 def main():
