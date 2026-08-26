@@ -17,12 +17,17 @@ Plain text throughout, no markdown. Telegram's MarkdownV2 rejects unescaped `.`,
 from __future__ import annotations
 
 import argparse
+import contextlib
+import hashlib
+import json
 import sys
+import time
 from datetime import timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import bot_state  # noqa: E402
 import live_prices  # noqa: E402
 import position_book as pb  # noqa: E402
 from alpha_lib import Panel  # noqa: E402
@@ -32,6 +37,20 @@ from trade_lib import (SHARES_PER_LOT, admit, atr_series, config_from_env,  # no
 
 ROOT = Path(__file__).resolve().parents[1]
 BOARD = ROOT / "data" / "panel" / "momentum_board.json"
+TRADE_LOCK = Path("/tmp/idx-trade.lock")
+
+
+def _load_sectors() -> dict:
+    import csv as _csv
+    f = ROOT / "reference" / "tickers.csv"
+    if not f.exists():
+        return {}
+    with f.open(encoding="utf-8") as fh:
+        return {(r.get("ticker") or "").strip().upper(): (r.get("sector") or "").strip() or None
+                for r in _csv.DictReader(fh) if r.get("ticker")}
+
+
+SECTORS = _load_sectors()
 
 HELP = (
     "IDX TRADE BOT\n\n"
@@ -43,7 +62,13 @@ HELP = (
     "/help            this message\n\n"
     "The board lands at 07:00 WIB, the trade plan at 07:15, the pre-close\n"
     "exit check at 15:40, weekdays.\n\n"
-    "Recording trades from here is not enabled yet."
+    "WRITE (each one asks you to confirm first)\n"
+    "/open TICKER LOTS PRICE [stop=PX] [date=...]\n"
+    "/scale TICKER LOTS PRICE      partial exit\n"
+    "/close TICKER PRICE           full exit\n"
+    "/stop TICKER PRICE            move a stop up\n"
+    "/yes  .  /no                  confirm or discard\n\n"
+    "Nothing is recorded until you reply /yes. Tickets expire in 10 minutes."
 )
 
 _PANEL = None
@@ -322,6 +347,354 @@ def cmd_plan(sym: str, px: float | None = None) -> str:
     return "\n".join(L)
 
 
+# ---------------------------------------------------------------------- write commands
+#
+# Every command here builds a TICKET and writes nothing. The ledger is touched in exactly
+# one place, commit(), and only after /yes. That separation is the whole safety model: a
+# fat-fingered lot count typed on a phone is a proposal until you have read it back.
+
+
+class LockBusy(Exception):
+    pass
+
+
+@contextlib.contextmanager
+def trade_lock(timeout_s: int = 20):
+    """The same /tmp/idx-trade.lock that idx-trade-plan and idx-trade-preclose take.
+
+    A 20-second ceiling, not the 300/600s those units use: the listener must stay
+    responsive, and it must never be the reason the pre-close job misses its window. If
+    the lock is held we say so and let the user retry — a queue of pending financial
+    writes is worse than a refusal.
+
+    idx-bot.service already sets PrivateTmp=false (the unit says why); a private /tmp
+    would make the lock invisible and this guard silently useless.
+    """
+    try:
+        import fcntl
+    except ImportError:                      # Windows: local testing only, prod is Linux
+        yield None
+        return
+    TRADE_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(TRADE_LOCK, "a+")
+    deadline = time.time() + timeout_s
+    try:
+        while True:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.time() >= deadline:
+                    raise LockBusy(
+                        "the trade layer is busy right now (the plan or pre-close job is "
+                        "writing). Try again in a minute.")
+                time.sleep(1)
+        yield fh
+    finally:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+        except Exception:                                      # noqa: BLE001
+            pass
+        fh.close()
+
+
+def _num(tok: str) -> float:
+    """Accept 2600, 2,600 and 2.6k — a phone keyboard invites all three."""
+    t = tok.strip().replace(",", "").lower()
+    mult = 1
+    if t.endswith("k"):
+        mult, t = 1_000, t[:-1]
+    elif t.endswith("m"):
+        mult, t = 1_000_000, t[:-1]
+    return float(t) * mult
+
+
+def _kwargs(args: list) -> tuple:
+    """Split trailing key=value pairs off the positional arguments."""
+    pos, kw = [], {}
+    for a in args:
+        if "=" in a and not a[0].isdigit():
+            k, v = a.split("=", 1)
+            kw[k.strip().lower()] = v.strip()
+        else:
+            pos.append(a)
+    return pos, kw
+
+
+def _event_hash(ev: dict) -> str:
+    return "sha256:" + hashlib.sha256(
+        json.dumps(ev, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
+
+
+def _sanity(sym: str, lots: int, px: float, stop: float, cfg, st: dict) -> list:
+    """Warnings that make a mis-typed number unmissable rather than merely present.
+
+    The lot count is where a phone goes wrong, and a wrong lot count does not look wrong
+    in lots — it looks wrong as a MULTIPLE OF YOUR RISK BUDGET. 500 lots reads 1.00x;
+    5,000 reads 10.0x, which no one confirms by accident.
+    """
+    w = []
+    notional = px * lots * SHARES_PER_LOT
+    eq = st.get("equity_idr") or cfg.equity_idr
+    if notional > eq:
+        w.append(f"notional {rupiah(notional)} EXCEEDS your whole book {rupiah(eq)}")
+    elif notional > 0.40 * eq:
+        w.append(f"notional is {notional / eq:.0%} of the book "
+                 f"(cap is {cfg.max_pos_pct:.0%})")
+    if stop:
+        risk = (px - stop) * lots * SHARES_PER_LOT
+        mult = risk / cfg.risk_budget_idr if cfg.risk_budget_idr else 0
+        if mult > 1.5 or mult < 0.5:
+            w.append(f"risk {rupiah(risk)} is {mult:.2f}x your risk budget "
+                     f"{rupiah(cfg.risk_budget_idr)}")
+    q = live_prices.quote(sym)
+    if q and q.get("px"):
+        gap = px / q["px"] - 1
+        if abs(gap) > 0.15:
+            w.append(f"price {px:,.0f} is {gap:+.0%} away from the last mark "
+                     f"{q['px']:,.0f} ({live_prices.age_str(q)})")
+    return w
+
+
+def _ticket(title: str, body: list, warnings: list, action: str) -> str:
+    L = [title, "-" * 30] + body
+    if warnings:
+        L += ["", "CHECK THIS:"] + [f"  [!] {w}" for w in warnings]
+    L += ["", action]
+    return "\n".join(L)
+
+
+def _stash(command: str, raw: str, ev: dict, text: str, warnings: list,
+           ctx: dict, extra: dict | None = None) -> str:
+    bot_state.save_pending(bot_state.new_ticket(
+        command=command, raw_text=raw, event=ev, ticket_text=text,
+        chat_id=(ctx or {}).get("chat_id", ""), update_id=(ctx or {}).get("update_id", 0),
+        message_id=(ctx or {}).get("message_id", 0),
+        book_fingerprint=pb.ledger_fingerprint(), warnings=warnings, extra=extra))
+    return text
+
+
+def cmd_open(args: list, ctx: dict) -> str:
+    pos_args, kw = _kwargs(args)
+    if len(pos_args) < 3:
+        return ("Usage:  /open TICKER LOTS PRICE [stop=PX] [date=YYYY-MM-DD]\n"
+                "e.g.    /open DMAS 10000 167")
+    sym = pos_args[0].upper()
+    ok, company = pb.validate_symbol(sym)
+    if not ok:
+        return company
+    try:
+        lots, px = int(_num(pos_args[1])), _num(pos_args[2])
+    except ValueError:
+        return f"Could not read lots/price from {pos_args[1]!r} {pos_args[2]!r}"
+    if lots <= 0 or px <= 0:
+        return "Lots and price must both be positive."
+
+    cfg, _ = config_from_env()
+    st = pb.rebuild()
+    cfg.equity_idr = st["equity_idr"] or cfg.equity_idr
+    if sym in st["positions"]:
+        return (f"{sym} is already open ({st['positions'][sym]['lots']} lots @"
+                f"{st['positions'][sym]['entry_px']:,.0f}).\n"
+                f"The book does not average in. Use /scale to sell part, or record the "
+                f"exit first.")
+
+    p = panel()
+    i = len(p.dates) - 1
+    a = atr_series(p, sym).get(i)
+    basis = "manual"
+    if "stop" in kw:
+        stop = _num(kw["stop"])
+    elif a:
+        # Stop from the FILL, not from the board's reference — the house rule the plan
+        # already prints as "if you fill above entry_hi, move the stop with you".
+        stop, basis = stop_price(px, a, low_n_prior(p, sym, i, cfg.struct_lookback), cfg)
+        if not stop:
+            return (f"{sym}: cannot compute a stop from a fill of {px:,.0f} — {basis}.\n"
+                    f"Pass one explicitly:  /open {sym} {lots} {px:,.0f} stop=<PX>")
+    else:
+        return f"{sym}: no ATR in the panel, so pass a stop:  stop=<PX>"
+
+    stop = round_tick(stop, "down")
+    if stop >= px:
+        return f"Stop {stop:,.0f} is at or above the fill {px:,.0f}."
+
+    ev = pb.open_event(sym, lots, px, stop, basis=basis, atr14=a,
+                       sector=SECTORS.get(sym), rule=_entry_rule(sym),
+                       date=kw.get("date"), cfg=cfg)
+    notional = px * lots * SHARES_PER_LOT
+    risk = ev["r_idr"]
+    sold, keep = split_lots(lots, cfg.scale_fraction)
+    body = [
+        f"{sym}  {company}",
+        f"BUY   {lots:,} lots @ {px:,.0f}   ({kw.get('date') or 'today'})",
+        f"      = {lots * SHARES_PER_LOT:,} shares = {rupiah(notional)} "
+        f"= {notional / cfg.equity_idr:.1%} of book",
+        f"STOP  {stop:,.0f}  ({(px - stop) / px:-.1%}, {basis})",
+        f"RISK  {rupiah(risk)} = {risk / cfg.equity_idr:.2%} of book "
+        f"= {risk / cfg.risk_budget_idr:.2f}x your risk budget",
+    ]
+    if sold:
+        body.append(f"SCALE sell {sold:,} at "
+                    f"{round_tick(px + cfg.scale_level_r * (px - stop), 'up'):,.0f} "
+                    f"(+{cfg.scale_level_r:g}R), keep {keep:,}")
+    if ev["entry_rule"] == "discretionary":
+        body.append("ENTRY discretionary — not on the board for this session")
+
+    txt = _ticket(f"CONFIRM OPEN {sym}", body,
+                  _sanity(sym, lots, px, stop, cfg, st),
+                  "Reply /yes to record it, /no to discard. Expires in 10 minutes.")
+    return _stash("open", " ".join(["/open"] + args), ev, txt,
+                  _sanity(sym, lots, px, stop, cfg, st), ctx)
+
+
+def _entry_rule(sym: str) -> str:
+    """board+size, or discretionary — and the difference becomes queryable later.
+
+    A warning read once is forgotten; a field on the event lets you partition realised R
+    by entry type at review time and find out whether discretionary picks actually pay.
+    """
+    _sess, syms = board_state()
+    return "board+size" if sym in syms else "discretionary"
+
+
+def _exit_ticket(kind: str, args: list, ctx: dict) -> str:
+    pos_args, kw = _kwargs(args)
+    need = 3 if kind == "scale" else 2
+    if len(pos_args) < need:
+        return (f"Usage:  /{kind} TICKER "
+                f"{'LOTS ' if kind == 'scale' else ''}PRICE [date=YYYY-MM-DD]")
+    sym = pos_args[0].upper()
+    st = pb.rebuild()
+    pos = st["positions"].get(sym)
+    if not pos:
+        held = ", ".join(sorted(st["positions"])) or "nothing"
+        return f"{sym} is not open. You hold: {held}."
+    try:
+        if kind == "scale":
+            lots, px = int(_num(pos_args[1])), _num(pos_args[2])
+        else:
+            lots, px = pos["lots"], _num(pos_args[1])
+    except ValueError:
+        return "Could not read the numbers."
+    if lots <= 0 or lots > pos["lots"]:
+        return f"{sym} has {pos['lots']:,} lots open; {lots:,} requested."
+    if kind == "scale" and lots == pos["lots"]:
+        return f"That is the whole position — use /close {sym} {px:,.0f}."
+
+    cfg, _ = config_from_env()
+    cfg.equity_idr = st["equity_idr"] or cfg.equity_idr
+    ev = pb.exit_event(kind, sym, lots, px, pos=pos, reason=kw.get("reason", ""),
+                       date=kw.get("date"), cfg=cfg)
+    leg_r = pos["r_idr"] * lots / pos["lots_initial"]
+    body = [
+        f"{sym}  {lots:,} of {pos['lots']:,} lots @ {px:,.0f}   "
+        f"({kw.get('date') or 'today'})",
+        f"      entry {pos['entry_px']:,.0f}, stop {pos['stop_px']:,.0f}",
+        f"P&L   {rupiah(ev['realised_idr'])}  "
+        f"({ev['realised_idr'] / leg_r:+.2f}R on the leg)" if leg_r else
+        f"P&L   {rupiah(ev['realised_idr'])}",
+        f"LEAVES {pos['lots'] - lots:,} lots open" if kind == "scale" else "CLOSES the position",
+    ]
+    warn = []
+    q = live_prices.quote(sym)
+    if q and q.get("px") and abs(px / q["px"] - 1) > 0.15:
+        warn.append(f"price {px:,.0f} is {px / q['px'] - 1:+.0%} from the last mark "
+                    f"{q['px']:,.0f}")
+    txt = _ticket(f"CONFIRM {kind.upper()} {sym}", body, warn,
+                  "Reply /yes to record it, /no to discard. Expires in 10 minutes.")
+    return _stash(kind, " ".join([f"/{kind}"] + args), ev, txt, warn, ctx)
+
+
+def cmd_movestop(args: list, ctx: dict) -> str:
+    pos_args, _kw = _kwargs(args)
+    if len(pos_args) < 2:
+        return "Usage:  /stop TICKER PRICE"
+    sym = pos_args[0].upper()
+    st = pb.rebuild()
+    pos = st["positions"].get(sym)
+    if not pos:
+        return f"{sym} is not open."
+    try:
+        px = round_tick(_num(pos_args[1]), "down")
+    except ValueError:
+        return f"Could not read a price from {pos_args[1]!r}"
+    if px < pos["stop_px"]:
+        return (f"{px:,.0f} is BELOW the current stop {pos['stop_px']:,.0f}.\n"
+                f"Stops are monotone by design — widening one mid-trade is how a 1R loss "
+                f"becomes a 3R loss. Not available from the phone; use the CLI with "
+                f"--allow-lower if you truly mean it.")
+    ev = pb.stop_event(sym, px, pos["stop_px"], reason="moved from telegram")
+    body = [f"{sym}  stop {pos['stop_px']:,.0f} -> {px:,.0f}",
+            "      R is FROZEN at open and does not change with the stop."]
+    txt = _ticket(f"CONFIRM STOP {sym}", body, [],
+                  "Reply /yes to record it, /no to discard.")
+    return _stash("stop", " ".join(["/stop"] + args), ev, txt, [], ctx)
+
+
+def cmd_no() -> str:
+    if not bot_state.load_pending():
+        return "Nothing pending."
+    bot_state.clear_pending()
+    return "Discarded. Nothing was recorded."
+
+
+def commit(args: list) -> str:
+    """The only place in this file that writes. Every step removes a failure mode."""
+    p_ = bot_state.load_pending()
+    if not p_:
+        return "Nothing to confirm. Send a command first."
+    if bot_state.is_expired(p_):
+        bot_state.clear_pending()
+        return ("That ticket expired (10 minutes). Nothing was recorded — retype the "
+                "command so the price is one you still remember.")
+    ev_sym = (p_.get("event") or {}).get("symbol")
+    if args and args[0].upper() != (ev_sym or "").upper():
+        return f"The pending ticket is for {ev_sym}, not {args[0].upper()}. /no to discard."
+
+    try:
+        with trade_lock():
+            # The book must be the one the ticket was built against. Anything appended
+            # since — the pre-close job, a laptop CLI — invalidates every derived number
+            # in the ticket: whether the position exists, how many lots remain, heat.
+            if pb.ledger_fingerprint() != p_["book_fingerprint"]:
+                bot_state.clear_pending()
+                return ("The book changed since that ticket was built, so its numbers are "
+                        "stale. Nothing was recorded. Send the command again.")
+
+            seen = bot_state.load_seen()
+            ev = {"ts": pb.now_wib(), **p_["event"]}
+            h = _event_hash(p_["event"])
+            dup = bot_state.recent_commit(seen, h)
+            if dup:
+                bot_state.clear_pending()
+                return f"Already recorded at {dup['ts'][:16].replace('T', ' ')} — {dup['summary']}."
+
+            # DRY RUN. An append-only file cannot be rolled back, so the invariants are
+            # checked in memory in front of the write, never after it.
+            problems = pb.verify_events(pb.read_events() + [ev])
+            if problems:
+                bot_state.clear_pending()
+                return ("Refused — that would have broken the ledger:\n"
+                        + "\n".join(f"  {x}" for x in problems[:5])
+                        + "\nNothing was recorded.")
+
+            pb.append_event(ev)
+            bot_state.clear_pending()
+            state = pb.rebuild()
+            pb.write_cache(state)
+            summary = f"{ev.get('symbol')} {ev.get('type')}"
+            bot_state.record_commit(seen, h, summary)
+            bot_state.mark_confirmed(f"committed {summary}")
+            bot_state.save_seen(seen)
+    except LockBusy as e:
+        return str(e)
+
+    # Reply with a READ of the ledger after the write, not an echo of the ticket, so a
+    # partial failure is visible rather than papered over by an optimistic confirmation.
+    return "RECORDED.\n\n" + cmd_book()
+
+
 def dispatch(cmd: str, args: list, ctx: dict | None = None) -> str | None:
     """Return reply text, or None if this file does not own the command."""
     if cmd == "book":
@@ -330,10 +703,21 @@ def dispatch(cmd: str, args: list, ctx: dict | None = None) -> str | None:
         if not args:
             return "Which ticker? e.g. /plan DMAS"
         return cmd_plan(args[0], float(args[1]) if len(args) > 1 else None)
-    if cmd in ("open", "close", "scale", "stop", "yes", "no", "undo", "reconcile"):
-        return ("Recording trades from Telegram is not enabled yet — this phase is "
-                "read-only on purpose.\nUse /book and /plan, and record fills with the "
-                "CLI for now.")
+    ctx = ctx or {}
+    if cmd == "open":
+        return cmd_open(args, ctx)
+    if cmd in ("close", "scale"):
+        return _exit_ticket(cmd, args, ctx)
+    if cmd == "stop":
+        return cmd_movestop(args, ctx)
+    if cmd == "yes":
+        return commit(args)
+    if cmd == "no":
+        return cmd_no()
+    if cmd == "undo":
+        return ("There is no /undo. The ledger is append-only, so a mistake is corrected "
+                "by recording its opposite, not by deleting it.\n"
+                "Use /close or /scale, or the CLI on the laptop.")
     return None
 
 

@@ -156,13 +156,141 @@ def diff_events(golden: list[dict], fresh: list[dict]) -> list[str]:
     return problems
 
 
+# ------------------------------------------------------------------ write lifecycle
+#
+# Exercised against a scratch book via IDX_BOOK_DIR. Every assertion here is a failure
+# mode that would otherwise be discovered on a real ledger, which is append-only and
+# therefore unforgiving.
+
+
+def run_lifecycle() -> list:
+    problems = []
+    tmp = Path(tempfile.mkdtemp(prefix="idxlife-"))
+    os.environ["IDX_BOOK_DIR"] = str(tmp)
+    os.environ.update(TRADE_EQUITY_IDR="1000000000", TRADE_RISK_PCT="0.005",
+                      TRADE_SIZING_MODE="risk", TRADE_FEE_BUY="0.0010",
+                      TRADE_FEE_SELL="0.0010")
+    try:
+        import bot_state
+        import position_book as pb
+        import trade_bot as tb
+
+        def chk(name, cond, detail=""):
+            print(f"  [{'ok' if cond else '!!'}] {name}{'' if cond else '  <- ' + detail}")
+            if not cond:
+                problems.append(name)
+
+        def d(cmd, *args):
+            return tb.dispatch(cmd, list(args), {"chat_id": "1"}) or ""
+
+        pb.append_event({"ts": pb.now_wib(), "type": "equity",
+                         "equity_idr": 1_000_000_000.0, "note": "lifecycle"})
+
+        print("rejections that must happen before anything is written")
+        chk("bad ticker is refused with a suggestion",
+            "Did you mean" in d("open", "ISTA", "100", "2000"))
+        chk("missing arguments print the usage", "Usage:" in d("open", "DMAS"))
+        chk("non-numeric lots are caught", "Could not read" in d("open", "DMAS", "abc", "167"))
+        chk("nothing pending means nothing to confirm",
+            "Nothing to confirm" in d("yes"))
+        chk("no ledger events written yet", len(pb.read_events()) == 1,
+            f"{len(pb.read_events())} events")
+
+        print("open -> confirm")
+        t = d("open", "DMAS", "10000", "167")
+        chk("ticket is built", "CONFIRM OPEN DMAS" in t, t[:80])
+        chk("ticket shows shares and book share", "shares" in t and "of book" in t)
+        chk("ticket shows the risk multiple", "your risk budget" in t)
+        chk("a pending ticket exists", bot_state.load_pending() is not None)
+        chk("the pending event carries no ts",
+            "ts" not in (bot_state.load_pending() or {}).get("event", {}))
+        chk("STILL nothing written", len(pb.read_events()) == 1)
+
+        r = d("yes")
+        chk("commit reports RECORDED", r.startswith("RECORDED"), r[:80])
+        chk("exactly one event appended", len(pb.read_events()) == 2)
+        chk("pending is cleared", bot_state.load_pending() is None)
+        st = pb.rebuild()
+        chk("position is open", "DMAS" in st["positions"])
+        chk("r_idr matches (entry-stop)*lots*100",
+            abs(st["positions"]["DMAS"]["r_idr"]
+                - (167 - st["positions"]["DMAS"]["stop_px"]) * 10000 * 100) < 1.0)
+
+        print("duplicate and conflicting writes")
+        chk("a second /yes finds nothing", "Nothing to confirm" in d("yes"))
+        chk("re-opening a live symbol is refused",
+            "already open" in d("open", "DMAS", "500", "170"))
+        chk("still two events", len(pb.read_events()) == 2)
+
+        print("stop discipline")
+        cur = st["positions"]["DMAS"]["stop_px"]
+        chk("lowering a stop is refused", "BELOW the current stop"
+            in d("stop", "DMAS", str(int(cur) - 5)))
+        d("stop", "DMAS", str(int(cur) + 3))
+        chk("raising a stop builds a ticket", bot_state.load_pending() is not None)
+        d("yes")
+        chk("stop moved up", pb.rebuild()["positions"]["DMAS"]["stop_px"] > cur)
+
+        print("the fingerprint guard")
+        d("scale", "DMAS", "3000", "180")
+        chk("scale ticket built", bot_state.load_pending() is not None)
+        pb.append_event({"ts": pb.now_wib(), "type": "note",
+                         "text": "something else wrote while the ticket was open"})
+        out = d("yes")
+        chk("a moved book refuses the stale ticket", "book changed" in out, out[:90])
+        chk("pending cleared after refusal", bot_state.load_pending() is None)
+
+        print("expiry")
+        d("scale", "DMAS", "3000", "180")
+        pend = bot_state.load_pending()
+        pend["expires_ts"] = "2020-01-01T00:00:00+07:00"
+        bot_state.save_pending(pend)
+        chk("an expired ticket is refused", "expired" in d("yes"))
+
+        print("scale then close")
+        n_before = len(pb.read_events())
+        d("scale", "DMAS", "3000", "180")
+        d("yes")
+        chk("scale recorded", len(pb.read_events()) == n_before + 1)
+        chk("7000 lots remain", pb.rebuild()["positions"]["DMAS"]["lots"] == 7000)
+        chk("scaling the whole line is refused",
+            "use /close" in d("scale", "DMAS", "7000", "185").lower())
+        d("close", "DMAS", "185")
+        d("yes")
+        chk("position is closed", "DMAS" not in pb.rebuild()["positions"])
+        chk("closed trade recorded", len(pb.rebuild()["closed"]) == 1)
+
+        print("the ledger survives all of it")
+        chk("verify finds no problems", pb.verify_events(pb.read_events()) == [],
+            str(pb.verify_events(pb.read_events())[:2]))
+        chk("/no discards cleanly", "Discarded" in (d("open", "BBCA", "100", "9000")
+                                                     and d("no")))
+        chk("no phantom position", "BBCA" not in pb.rebuild()["positions"])
+    finally:
+        os.environ.pop("IDX_BOOK_DIR", None)
+        shutil.rmtree(tmp, ignore_errors=True)
+    return problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--capture", action="store_true",
                     help="freeze the current behaviour as the golden (known-good code only)")
+    ap.add_argument("--lifecycle", action="store_true",
+                    help="exercise the write commands against a scratch book")
     ap.add_argument("--skip-contract", action="store_true",
                     help="ledger events only; skips the slower screener commands")
     a = ap.parse_args()
+
+    if a.lifecycle:
+        print("exercising the write commands against a scratch book...")
+        probs = run_lifecycle()
+        print()
+        if probs:
+            print(f"[!!] {len(probs)} failed: {', '.join(probs)}")
+            return 1
+        print("[ok] full write lifecycle and every rejection path behaved")
+        return 0
 
     print("replaying the ledger lifecycle against a scratch book...")
     fresh = run_scenario()
