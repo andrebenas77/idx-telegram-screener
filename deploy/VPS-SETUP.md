@@ -233,13 +233,30 @@ carries full account permissions, defeating the per-repo scoping entirely.
 Config in `secrets/portfolio.env` (gitignored, 0600); template is
 `secrets/portfolio.env.example`.
 
-**Pages on a private repo requires a paid GitHub plan.** On the free tier
-`POST repos/<owner>/idx-book/pages` returns 422. After upgrading:
+### ⚠ DO NOT ENABLE GITHUB PAGES ON THIS REPO
 
-```
-gh api -X POST repos/andrebenas77/idx-book/pages -f "source[branch]=main" -f "source[path]=/docs"
-sudo systemctl enable --now idx-portfolio.timer
-```
+**"Pages from a private repo" and "private Pages" are different products, and only the
+first one comes with Pro.** Publishing from a private repo needs Pro; restricting WHO CAN
+VIEW the result needs Enterprise Cloud. Enable Pages on Pro and GitHub builds the site
+with `public: true` and serves your book to anyone with the URL. `PUT .../pages` with
+`public=false` returns **422 Current plan does not support private GitHub Pages** — there
+is no way to fix it after the fact, only to delete the site.
 
-Until then the timer stays disabled: the page still generates and commits, but nothing
-serves it, and 28 commits a day to a page nobody can open is noise.
+This happened on 2026-08-27. Pages was enabled, built public, and was deleted within a
+couple of minutes. Nothing was linked to it and the repo showed 0 forks / 0 watchers, but
+equity, lot counts and P&L were briefly served at
+`https://andrebenas77.github.io/idx-book/`.
+
+The three guards in publish_portfolio.sh did NOT catch it, and could not: they check the
+git layer — output path, git toplevel, remote — and all three passed correctly. The
+exposure was introduced one layer up, in GitHub's Pages setting, which nothing in this
+repo controls.
+
+**So the rule is a rule, not a guard: this book is never served by GitHub Pages.**
+Verify with `gh api repos/andrebenas77/idx-book | grep has_pages` — it must be `false`.
+
+Serve it from this VPS instead (Caddy, HTTPS, basic auth), or read the book through
+`/book` and `/export` in Telegram, which need no hosting at all.
+
+`idx-portfolio.timer` stays **disabled** until there is somewhere safe to serve the page.
+The generator and publisher are correct and tested; only the destination is unresolved.
