@@ -1,0 +1,26 @@
+[Unit]
+Description=IDX Trade — portfolio page, every 15 min during the session
+Documentation=https://github.com/andrebenas77/idx-telegram-screener
+
+[Timer]
+# Coarse on purpose. The real window is enforced in build_portfolio.py, because IDX's
+# lunch break and its public holidays are not expressible in an OnCalendar — and a
+# hardcoded holiday list goes stale the first year nobody updates it. The script exits
+# without writing when it is not a session, when the book is flat, or when every mark is
+# hours old, which is the holiday test that cannot go stale.
+OnCalendar=Mon..Fri *-*-* 09..16:00/15:00 Asia/Jakarta
+# One more after pre-closing, so the page holds the day's closing marks overnight and
+# the header stops claiming to be live.
+OnCalendar=Mon..Fri *-*-* 16:25:00 Asia/Jakarta
+AccuracySec=15s
+RandomizedDelaySec=30
+
+# Persistent=false, and this one matters. A catch-up run at 22:00 would publish a page
+# stamped "live" carrying marks from a market that closed six hours ago — the same
+# reasoning idx-trade-preclose.timer documents for its own sell verdict.
+Persistent=false
+
+Unit=idx-portfolio.service
+
+[Install]
+WantedBy=timers.target

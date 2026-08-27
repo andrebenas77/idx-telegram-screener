@@ -1,0 +1,27 @@
+[Unit]
+Description=IDX Trade — private portfolio page
+Documentation=https://github.com/andrebenas77/idx-telegram-screener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=andrebenas77
+Group=andrebenas77
+WorkingDirectory=/home/andrebenas77/idx-telegram-screener
+EnvironmentFile=/etc/idx-screener.env
+Environment=PATH=/home/andrebenas77/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+# Its own lock, and -n rather than -w: if the previous refresh is still running, SKIP
+# this one instead of stacking. A page is worth having; a queue of stale pages is not.
+ExecStart=/usr/bin/flock -n /tmp/idx-portfolio.lock \
+    /bin/bash /home/andrebenas77/idx-telegram-screener/scripts/publish_portfolio.sh
+
+TimeoutStartSec=10min
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=full
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target

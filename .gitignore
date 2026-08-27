@@ -5,6 +5,7 @@
 secrets/*
 !secrets/.env.example
 !secrets/trade.env.example
+!secrets/portfolio.env.example
 *.session
 *.session-journal
 .env
