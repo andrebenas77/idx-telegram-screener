@@ -68,6 +68,7 @@ HELP = (
     "/close TICKER PRICE           full exit\n"
     "/stop TICKER PRICE            move a stop up\n"
     "/yes  .  /no                  confirm or discard\n\n"
+    "/export                       the book as an Excel workbook\n"
     "Nothing is recorded until you reply /yes. Tickets expire in 10 minutes."
 )
 
@@ -706,6 +707,22 @@ def commit(args: list) -> str:
     return "RECORDED.\n\n" + cmd_book()
 
 
+def cmd_export(args: list, ctx: dict) -> str:
+    """Build the workbook and hand it back as a Telegram document.
+
+    Detached, with an immediate acknowledgement — the pattern trigger_run() uses. The
+    BoardFires reconstruction loads the whole panel and takes tens of seconds, and a poll
+    loop blocked on that stops answering everything else.
+    """
+    import subprocess
+    script = Path(__file__).resolve().parent / "_export_and_send.py"
+    subprocess.Popen([sys.executable, str(script)],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    return ("Building the workbook - Summary, Open, Trades, Equity, Ledger and "
+            "BoardFires. I will send it here in a moment (~30s).")
+
+
 def dispatch(cmd: str, args: list, ctx: dict | None = None) -> str | None:
     """Return reply text, or None if this file does not own the command."""
     if cmd == "book":
@@ -721,6 +738,8 @@ def dispatch(cmd: str, args: list, ctx: dict | None = None) -> str | None:
         return _exit_ticket(cmd, args, ctx)
     if cmd == "stop":
         return cmd_movestop(args, ctx)
+    if cmd == "export":
+        return cmd_export(args, ctx)
     if cmd == "yes":
         return commit(args)
     if cmd == "no":

@@ -99,6 +99,46 @@ def whoami(token):
         print(f"  TELEGRAM_CHAT_ID={cid}   ({name})")
 
 
+CRLF = "\r\n"
+
+
+def send_document(token: str, chat_id: str, path, caption: str = "") -> bool:
+    """Upload a file. sendMessage cannot carry one, and a workbook is the point.
+
+    multipart/form-data is assembled by hand because this repo stays stdlib-only —
+    `requests` is not a dependency anywhere, and adding one for a single upload would be
+    a poor trade. Telegram's document limit is 50 MB; a book export is a few hundred KB.
+    """
+    import mimetypes
+    import uuid
+    path = Path(path)
+    if not path.exists():
+        return False
+    b = uuid.uuid4().hex
+    ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    parts = []
+    for k, v in (("chat_id", str(chat_id)), ("caption", caption[:1000])):
+        if v:
+            parts.append(("--" + b + CRLF
+                          + 'Content-Disposition: form-data; name="' + k + '"'
+                          + CRLF + CRLF + v + CRLF).encode())
+    parts.append(("--" + b + CRLF
+                  + 'Content-Disposition: form-data; name="document"; filename="'
+                  + path.name + '"' + CRLF
+                  + "Content-Type: " + ctype + CRLF + CRLF).encode())
+    parts.append(path.read_bytes())
+    parts.append((CRLF + "--" + b + "--" + CRLF).encode())
+    req = urllib.request.Request(
+        API.format(token=token, method="sendDocument"), data=b"".join(parts),
+        headers={"Content-Type": "multipart/form-data; boundary=" + b})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            return json.load(r).get("ok", False)
+    except Exception as e:                                     # noqa: BLE001
+        print("[!!] sendDocument failed: " + repr(e), file=sys.stderr)
+        return False
+
+
 def main():
     ap = argparse.ArgumentParser(description="Send a Telegram message via your bot.")
     ap.add_argument("--text", help="Message text. If omitted, read from stdin.")
