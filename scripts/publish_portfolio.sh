@@ -56,8 +56,18 @@ fi
 # now an ARCHIVE (a dated history of the book), not the delivery mechanism.
 WEBROOT="${WEBROOT:-/var/www/idxbook}"
 if [[ -d "$WEBROOT" ]]; then
-    if install -m 640 "$OUT" "${WEBROOT}/index.html" 2>/dev/null; then
+    # -g caddy is load-bearing. `install` creates a NEW file owned by the INVOKING user
+    # and their primary group, so without it the scheduled run produces a file the caddy
+    # user cannot read and the site answers 404 to a correctly authenticated request.
+    # A manual test under `sg caddy` passes, which is how this hid: the interactive check
+    # and the timer had different effective groups.
+    if install -m 640 -g caddy "$OUT" "${WEBROOT}/index.html" 2>/dev/null; then
         log "served -> ${WEBROOT}/index.html"
+        # Prove it rather than assume it. A page nobody can read is worse than no page,
+        # because the timer keeps reporting success.
+        if ! sudo -n -u caddy test -r "${WEBROOT}/index.html" 2>/dev/null; then
+            log "[!!] caddy cannot READ the page it is meant to serve - expect 404"
+        fi
     else
         log "[!!] could not write ${WEBROOT} - the page is stale on the server"
     fi
