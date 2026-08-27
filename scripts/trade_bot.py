@@ -204,6 +204,17 @@ def position_lines(pos: dict, p: Panel, q: dict | None, cfg) -> list[str]:
     # The rule's own verdict, stated plainly. E2 is a CLOSE rule, so an intraday mark
     # under the floor is a warning and not a trigger — that distinction is the whole
     # GGRM lesson and it must survive into the phone view.
+    # Has E2 ALREADY fired? The floor printed above is the one for the NEXT session
+    # (it includes today's low), which is the right forward-looking number and exactly
+    # the wrong one for answering "did the rule already trigger". Both matter, so both
+    # are shown: ISAT on 2026-08-26 closed at 2,480 against a prior 5-session low of
+    # 2,530 — E2 had fired, while the forward floor read 2,480 and looked untouched.
+    last_close = (p.raw_close.get(sym, {}) or {}).get(i)
+    prev_floor = low_n_prior(p, sym, i - 1, cfg.struct_lookback)
+    if last_close is not None and prev_floor and last_close < prev_floor:
+        L.append(f"  [!!] E2 FIRED on {p.dates[i]}: close {last_close:,.0f} below the "
+                 f"5-session low {prev_floor:,.0f} — the rule says exit")
+
     if mark <= stop:
         L.append("  [!!] STOP BREACHED")
     elif lo5 and mark < lo5:
