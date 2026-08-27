@@ -48,6 +48,23 @@ if ! python3 "${ROOT}/scripts/build_portfolio.py" --out "$OUT" ${MARKET_ONLY:+$M
 fi
 [[ -s "$OUT" ]] || { log "nothing generated (outside the session, or flat)"; exit 0; }
 
+# --- serve it. This, not GitHub Pages, is the destination.
+#
+# Pages access control needs Enterprise Cloud; Pro publishes PUBLICLY and there is no way
+# to restrict it after the fact - which is how the book was briefly exposed on 2026-08-27.
+# Caddy on this box serves it over HTTPS behind basic auth instead. The git push below is
+# now an ARCHIVE (a dated history of the book), not the delivery mechanism.
+WEBROOT="${WEBROOT:-/var/www/idxbook}"
+if [[ -d "$WEBROOT" ]]; then
+    if install -m 640 "$OUT" "${WEBROOT}/index.html" 2>/dev/null; then
+        log "served -> ${WEBROOT}/index.html"
+    else
+        log "[!!] could not write ${WEBROOT} - the page is stale on the server"
+    fi
+else
+    log "[warn] ${WEBROOT} missing - nothing is serving the page"
+fi
+
 cd "$BOOK_REPO_DIR"
 if [[ -z "$(git status --porcelain docs/index.html)" ]]; then
     log "page unchanged — nothing to publish"; exit 0
