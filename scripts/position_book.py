@@ -84,7 +84,30 @@ def read_events() -> list[dict]:
     return out
 
 
+def assert_owner() -> None:
+    """Refuse to operate on a book that was migrated away from this machine.
+
+    Two ledgers is the root cause of the 9-session drift: data/book/ is gitignored, so
+    the laptop and the VPS each held their own and git never reconciled them. The fix is
+    one owner — but retiring the loser leaves a machine where LEDGER simply does not
+    exist, and read_events() returns [] for a missing file, so rebuild() reports a
+    perfectly healthy EMPTY book. Recording a fill against that would recreate the exact
+    split this migration exists to end, and it would look like it worked.
+    """
+    if LEDGER.exists():
+        return
+    retired = sorted(BOOK.glob("ledger.jsonl.retired-*"))
+    if retired:
+        raise SystemExit(chr(10).join([
+            f"[!!] this machine's ledger was retired ({retired[-1].name}).",
+            "     The book now lives on the VPS — record fills there, via Telegram",
+            "     or over ssh. Writing here would recreate the split book that",
+            "     caused the drift this migration ended.",
+        ]))
+
+
 def append_event(ev: dict) -> None:
+    assert_owner()
     BOOK.mkdir(parents=True, exist_ok=True)
     with LEDGER.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(ev, ensure_ascii=False) + "\n")
