@@ -63,10 +63,18 @@ if [[ -d "$WEBROOT" ]]; then
     # and the timer had different effective groups.
     if install -m 640 -g caddy "$OUT" "${WEBROOT}/index.html" 2>/dev/null; then
         log "served -> ${WEBROOT}/index.html"
-        # Prove it rather than assume it. A page nobody can read is worse than no page,
-        # because the timer keeps reporting success.
-        if ! sudo -n -u caddy test -r "${WEBROOT}/index.html" 2>/dev/null; then
-            log "[!!] caddy cannot READ the page it is meant to serve - expect 404"
+        # Prove it rather than assume it: a page nobody can read is worse than no page,
+        # because the timer keeps logging "published".
+        #
+        # Checked with stat, NOT `sudo -u caddy test -r`. That was the first attempt and
+        # it fired on every run, including runs that served correctly, because the
+        # publisher cannot sudo non-interactively from a timer — so the CHECK failed and
+        # was reported as the FILE failing. A warning that always fires is worse than no
+        # warning: it trains you to ignore the one time it is real.
+        GRP="$(stat -c '%G' "${WEBROOT}/index.html" 2>/dev/null || echo '?')"
+        MODE="$(stat -c '%a' "${WEBROOT}/index.html" 2>/dev/null || echo '000')"
+        if [[ "$GRP" != "caddy" || "${MODE:1:1}" -lt 4 ]]; then
+            log "[!!] page is ${GRP} mode ${MODE} — caddy cannot read it, expect 404"
         fi
     else
         log "[!!] could not write ${WEBROOT} - the page is stale on the server"
