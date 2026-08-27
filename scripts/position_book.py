@@ -68,7 +68,11 @@ def today_wib() -> str:
 # ------------------------------------------------------------------------ ledger I/O
 
 def read_events() -> list[dict]:
+    # A missing ledger is either a fresh machine (legitimately empty) or one whose book
+    # was migrated away. Those must not look alike: reporting "0 positions" on a machine
+    # that simply no longer owns the book is a lie, not a blank.
     if not LEDGER.exists():
+        assert_owner()
         return []
     out = []
     for n, line in enumerate(LEDGER.read_text(encoding="utf-8").splitlines(), 1):
