@@ -124,8 +124,14 @@ def run_contract() -> dict:
     # and a comparison across different panels checks the exit code only — the same gate
     # trade_backtest's --regress uses, for the same reason: diffing results computed on
     # different data reports a regression that is really just Tuesday.
+    # The contract output depends on THREE things: the code, the panel and the ledger.
+    # trade_plan prints open positions, so reconciling the book changes its stdout for
+    # reasons that have nothing to do with a code change. Fingerprint both inputs and
+    # compare stdout only when both match; otherwise check the exit code, which is the
+    # part that really means "the screener still runs".
     from alpha_lib import panel_fingerprint
-    out = {"_panel": panel_fingerprint()}
+    from position_book import ledger_fingerprint
+    out = {"_panel": panel_fingerprint(), "_ledger": ledger_fingerprint()}
     try:
         for name, argv in CONTRACT_CMDS:
             r = subprocess.run([PY, str(SCRIPTS / argv[0]), *argv[1:]],
@@ -301,7 +307,7 @@ def main() -> int:
         print("running the read-only screener entry points...")
         contract = run_contract()
         for k, v in contract.items():
-            if k == "_panel":
+            if k.startswith("_"):
                 continue
             n = len(v["stdout"].splitlines())
             print(f"  {k}: exit {v['rc']}, {n} lines")
@@ -323,11 +329,12 @@ def main() -> int:
 
     if contract is not None and CONTRACT.exists():
         gc = json.loads(CONTRACT.read_text(encoding="utf-8"))
-        same_panel = gc.get("_panel") == contract.get("_panel")
+        same_panel = (gc.get("_panel") == contract.get("_panel")
+                      and gc.get("_ledger") == contract.get("_ledger"))
         if not same_panel:
-            print("  [note] panel differs from the golden — checking exit codes only")
+            print("  [note] panel or ledger differs from the golden — exit codes only")
         for k, v in contract.items():
-            if k == "_panel" or k not in gc:
+            if k.startswith("_") or k not in gc:
                 continue
             if gc[k]["rc"] != v["rc"]:
                 problems.append(f"contract {k}: exit {gc[k]['rc']} -> {v['rc']}")
