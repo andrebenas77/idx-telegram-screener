@@ -99,10 +99,19 @@ def run_scenario() -> list[dict]:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# The board is the screener proper and needs no book, so it is always checked.
+# trade_plan reads the ledger, and after the migration only ONE machine owns that — so
+# on any other machine it correctly refuses to run, and reporting that as a regression
+# would flag the intended consequence of the migration as a break.
 CONTRACT_CMDS = [
-    ("momentum_summary", ["build_momentum_board.py", "--summary"]),
-    ("trade_plan_dry", ["trade_plan.py", "--dry-run", "--summary"]),
+    ("momentum_summary", ["build_momentum_board.py", "--summary"], False),
+    ("trade_plan_dry", ["trade_plan.py", "--dry-run", "--summary"], True),
 ]
+
+
+def _owns_book() -> bool:
+    from position_book import BOOK, LEDGER
+    return LEDGER.exists() or not any(BOOK.glob("ledger.jsonl.retired-*"))
 
 
 # docs/ files the contract commands touch as a side effect. build_momentum_board.py
@@ -133,7 +142,11 @@ def run_contract() -> dict:
     from position_book import ledger_fingerprint
     out = {"_panel": panel_fingerprint(), "_ledger": ledger_fingerprint()}
     try:
-        for name, argv in CONTRACT_CMDS:
+        owns = _owns_book()
+        for name, argv, needs_book in CONTRACT_CMDS:
+            if needs_book and not owns:
+                print(f"  {name}: skipped — this machine no longer owns the ledger")
+                continue
             r = subprocess.run([PY, str(SCRIPTS / argv[0]), *argv[1:]],
                                capture_output=True, text=True, cwd=str(ROOT))
             out[name] = {"rc": r.returncode, "stdout": r.stdout}
