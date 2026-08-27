@@ -185,3 +185,61 @@ Do these in order. **9.2 is the one that decides whether 2 GB was the right call
 | Two commits fighting | Your PC pushed without `git pull --rebase` first |
 
 Logs: `~/logs/screener-<date>.log`, plus `journalctl -u idx-screener` and `journalctl -u idx-bot`.
+
+---
+
+## Trade layer: bot commands, private portfolio page, Excel export
+
+Added 2026-08-27. The screener half above is unchanged.
+
+### Systemd units
+
+| unit | when | what |
+|---|---|---|
+| `idx-trade-plan.timer` | Mon–Fri 07:15 WIB | `trade_plan.py --summary --notify` |
+| `idx-trade-preclose.timer` | Mon–Fri 15:40 WIB | `trade_manage.py --notify`, `Persistent=false` |
+| `idx-portfolio.timer` | Mon–Fri every 15 min + 16:25 | private portfolio page, `Persistent=false` |
+
+All run as `andrebenas77` from `/home/andrebenas77/idx-telegram-screener`. **The units in
+`deploy/` shipped with `User=screener` and `/home/screener/...`, which is not this box** —
+rewrite the user and paths before installing or every fire fails silently.
+
+Install: `sudo install -m 644 -o root -g root deploy/idx-*.{service,timer}
+/etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now <timer>`
+
+Test with `sudo systemctl start <unit>` — **never by invoking the script over ssh**, which
+has no systemd environment, so `/etc/idx-screener.env` is absent and the run dies in
+seconds reporting missing credentials. And never run a build script directly in the repo:
+it dirties `docs/` and the next `git pull --rebase` fails, stranding the box on old code.
+
+### The ledger lives HERE
+
+`data/book/ledger.jsonl` is owned by this machine. The laptop's copy is
+`ledger.jsonl.retired-<date>`, and `position_book.assert_owner()` refuses both reads and
+writes there so it can never silently report a flat book. Do not restore it.
+
+### Excel export
+
+`apt install python3-openpyxl` — **not pip**, which PEP 668 blocks on Ubuntu 24.04.
+`/export` in Telegram builds the workbook and uploads it.
+
+### Private portfolio page
+
+Repo `andrebenas77/idx-book`, private, Pages from `/docs`. Deploy key `~/.ssh/id_idxbook`
+with **write** access; `~/.ssh/config` aliases `github-idxbook` with `IdentitiesOnly yes`
+— without it ssh offers the login key first, GitHub accepts it as the USER, and the push
+carries full account permissions, defeating the per-repo scoping entirely.
+
+Config in `secrets/portfolio.env` (gitignored, 0600); template is
+`secrets/portfolio.env.example`.
+
+**Pages on a private repo requires a paid GitHub plan.** On the free tier
+`POST repos/<owner>/idx-book/pages` returns 422. After upgrading:
+
+```
+gh api -X POST repos/andrebenas77/idx-book/pages -f "source[branch]=main" -f "source[path]=/docs"
+sudo systemctl enable --now idx-portfolio.timer
+```
+
+Until then the timer stays disabled: the page still generates and commits, but nothing
+serves it, and 28 commits a day to a page nobody can open is noise.
