@@ -29,7 +29,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from alpha_lib import Panel  # noqa: E402
 from intraday_lib import (BROWSER_UA, INTRADAY, Bar, bars_path, parse_payload,  # noqa: E402
                           pin_ipv4, read_bars, write_bars)
-from invezgo_client import InvezgoClient  # noqa: E402
+# invezgo_client imports `requests`, which is present on the VPS and absent on the Windows
+# analysis box. Importing it at module scope made `--verify` -- which touches no network at
+# all -- unrunnable wherever the fetch itself could not run, i.e. exactly where one wants to
+# audit the cached store. Imported inside client() instead.
 
 # Candidates for the composite index on this endpoint. The code is not documented and
 # G1 (the regime gate) is inoperable without it, so we probe rather than guess.
@@ -37,17 +40,18 @@ INDEX_CANDIDATES = ["COMPOSITE", "IHSG", "JKSE", "IDX", "^JKSE", "COMPOSITEINDEX
 QUOTA_FLOOR = 2000          # refuse to start a bulk job below this much headroom
 
 
-def client() -> InvezgoClient:
+def client():
+    from invezgo_client import InvezgoClient
     pin_ipv4()
     return InvezgoClient(user_agent=BROWSER_UA, use_cache=False, verbose=False)
 
 
-def quota(c: InvezgoClient) -> dict | None:
+def quota(c) -> dict | None:
     u = c.api_usage()
     return u if isinstance(u, dict) else None
 
 
-def fetch_one(c: InvezgoClient, sym: str, start: str, end: str) -> list[Bar]:
+def fetch_one(c, sym: str, start: str, end: str) -> list[Bar]:
     rows = c.multi_time_chart(sym, start, end, 5)
     if not isinstance(rows, list):
         return []
