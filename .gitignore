@@ -50,3 +50,8 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+
+# Agent scratch caches. `tape_rows.pkl` embeds raw Invezgo hourly bars, which is the same
+# licensed-vendor-data problem as data/intraday/ above, and this repo is public. Neither is
+# source code -- both are regenerable analysis intermediates.
+scripts/*.pkl
