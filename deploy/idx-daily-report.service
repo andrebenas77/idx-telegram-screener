@@ -1,0 +1,35 @@
+[Unit]
+Description=IDX Daily — morning report on the previous close
+Documentation=https://github.com/andrebenas77/idx-telegram-screener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# User and paths are andrebenas77, NOT screener. The older units in this directory ship
+# User=screener and /home/screener/..., which is not this box -- VPS-SETUP.md records that
+# every fire would fail silently. Written correctly from the start here.
+User=andrebenas77
+Group=andrebenas77
+WorkingDirectory=/home/andrebenas77/idx-telegram-screener
+
+# Telegram token and chat id. This report makes no Invezgo or Sectors calls at all -- the
+# board comes off disk and the price sections come from Yahoo -- but the file is the one
+# place those keys live and it costs nothing to source it.
+EnvironmentFile=/etc/idx-screener.env
+
+Environment=PATH=/home/andrebenas77/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+ExecStart=/home/andrebenas77/idx-telegram-screener/scripts/run_daily_report.sh --trigger timer
+
+# ~160 Yahoo fetches on a cold cache at about 0.12s apart, plus scoring. Measured near 120s
+# locally; 15 minutes is slack, not an expectation.
+TimeoutStartSec=15min
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=full
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target

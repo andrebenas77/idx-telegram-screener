@@ -1,0 +1,22 @@
+[Unit]
+Description=IDX Daily — morning report, 07:30 WIB on weekdays
+Documentation=https://github.com/andrebenas77/idx-telegram-screener
+
+[Timer]
+# 07:30: after idx-screener (07:00, ~150s) and idx-trade-plan (07:15), before idx-brief
+# (07:45). The 07:00 job on day D scores session D-1, so this reports the previous close.
+OnCalendar=Mon..Fri *-*-* 07:30:00 Asia/Jakarta
+
+# A few minutes of jitter so three jobs do not all wake a 2 GB box at once.
+RandomizedDelaySec=90
+
+# Persistent=true, matching idx-screener and idx-trade-plan and NOT idx-trade-preclose.
+# This report is descriptive of a session that has already closed, so a catch-up run after
+# an outage still says something true. The 13:00 half-day report, when it exists, must be
+# Persistent=false for the opposite reason.
+Persistent=true
+
+Unit=idx-daily-report.service
+
+[Install]
+WantedBy=timers.target
