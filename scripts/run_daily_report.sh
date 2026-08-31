@@ -27,7 +27,15 @@ if ! flock -w 600 9; then
     exit 0
 fi
 
-log "=== daily report start (trigger=${1:-manual}) ==="
+TRIGGER="manual"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --trigger) TRIGGER="${2:-manual}"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+
+log "=== daily report start (trigger=${TRIGGER}) ==="
 
 # The report is a consumer of the 07:00 job. If that job did not finish, say so rather than
 # reporting yesterday's board under today's date -- an absence of a RUN reading as a market

@@ -47,7 +47,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from alpha_lib import PANEL, Panel  # noqa: E402
-from fetch_prices import yahoo_chart  # noqa: E402  stdlib urllib; no `requests` dependency
+from fetch_prices import WIB, session_closed, yahoo_chart  # noqa: E402  stdlib urllib, no `requests`
 from momentum_setup import is_momentum  # noqa: E402
 from overlay_test import features  # noqa: E402
 import build_momentum_board as B  # noqa: E402  the live gate constants, never a copy
@@ -194,6 +194,39 @@ def build_yahoo_panel(syms, log):
             p.open[s][i], p.high[s][i], p.low[s][i] = o, h, l
             p.raw_close[s][i], p.volume[s][i], p.close[s][i] = c, v, a
     return p, bars, failed
+
+
+def closed(date_str: str, now=None) -> bool:
+    """Has the session on `date_str` finished?
+
+    Reuses `fetch_prices.session_closed`, whose docstring already states the exact hazard:
+    IDX regular trading ends 16:00 WIB with pre-closing to ~16:15, and Yahoo serves the
+    still-forming bar as the newest row. The first VPS run of this report scored session
+    2026-08-31 at 09:17 WIB -- a session two hours old and still open -- and every rvol5,
+    rsi and dd60 in it was computed from a partial bar. It looked exactly like a normal
+    report.
+    """
+    d = datetime.datetime.strptime(date_str, "%Y-%m-%d").replace(hour=12, tzinfo=WIB)
+    return session_closed(d.timestamp(), now)
+
+
+def pick_session(p, board, requested):
+    """The session to report on.
+
+    Anchored to the BOARD's session when it is available, so the price sections describe the
+    same day the validated section does. Falling back to "latest Yahoo date" is what produced
+    a report whose board section read NOT AVAILABLE while the price sections quietly described
+    a different, still-open day.
+    """
+    if requested:
+        return requested
+    bs = board.get("session")
+    if bs and bs in p.didx and closed(bs):
+        return bs
+    for d in reversed(p.dates):
+        if closed(d):
+            return d
+    return None
 
 
 def median_value(p, sym, i, win: int = 20):
@@ -390,11 +423,21 @@ def main() -> int:
         print("no trading dates -- refusing to report", file=sys.stderr)
         return 2
 
-    sessions = [a.date] if a.date else p.dates[-max(a.backtest_render, 1):]
+    if a.backtest_render:
+        sessions = [d for d in p.dates if closed(d)][-a.backtest_render:]
+    else:
+        chosen = pick_session(p, board, a.date)
+        if chosen is None:
+            print("no closed session available to report on", file=sys.stderr)
+            return 2
+        sessions = [chosen]
     for session in sessions:
         i = p.didx.get(session)
         if i is None or i < CAL_MIN_HISTORY:
             log("skipping %s (not enough history)" % session)
+            continue
+        if not closed(session):
+            log("refusing %s -- that session has not closed yet" % session)
             continue
         # momentum_board.json is a SINGLE snapshot, not a history. Replaying its candidates
         # against a session it does not cover would print eight names under a date they were
