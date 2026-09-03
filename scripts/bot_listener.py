@@ -18,6 +18,7 @@ Runs under systemd as idx-bot.service. Standard library only.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -35,6 +36,16 @@ import trade_bot  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 ENV = ROOT / "secrets" / ".env"
 RUNNER = ROOT / "scripts" / "run_daily.sh"
+REPORTER = ROOT / "scripts" / "run_daily_report.sh"
+BAND_CHILD = ROOT / "scripts" / "_band_and_send.py"
+REPORT_LOCK = "/tmp/idx-daily-report.lock"
+
+# A bare 4-letter uppercase message is a ticker request. The reserved set stays SMALL on
+# purpose: many English words are real IDX codes (HOME, BANK, FILM, DATA, STAR, HERO), so a
+# broad stop-list would swallow names. Lowercase or longer text is ignored as before.
+BARE = re.compile(r"[A-Z]{4}")
+RESERVED = {"HELP", "BOOK", "PLAN", "OPEN", "STOP", "BAND", "UNDO", "EXIT", "QUIT", "PING",
+            "TEST", "NONE", "NULL", "OKAY", "DONE", "WAIT"}
 LOCK = Path("/tmp/idx-screener.lock")
 STATE = ROOT / "build" / "last_run.json"
 
@@ -202,6 +213,39 @@ def trigger_run(token, chat_id):
     log("run triggered from Telegram")
 
 
+def trigger_band(token, chat_id, sym):
+    """Per-name write-up + chart, detached. The child sends both itself; on a cold Yahoo
+    cache it also sends its own "fetching" line, so the listener stays silent here — a
+    warm reply lands in ~2s and a second message would only be noise."""
+    if not BAND_CHILD.exists():
+        send(token, chat_id, f"Band script not found at {BAND_CHILD}")
+        return
+    subprocess.Popen(
+        [sys.executable, str(BAND_CHILD), sym],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    log(f"band requested for {sym}")
+
+
+def trigger_report(token, chat_id):
+    """Re-send the morning report. run_daily_report.sh holds its own lock, checks the 07:00
+    run finished ok, renders and delivers (chunked) by itself."""
+    if not REPORTER.exists():
+        send(token, chat_id, f"Report runner not found at {REPORTER}")
+        return
+    subprocess.Popen(
+        ["/bin/bash", str(REPORTER), "--trigger", "telegram"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    send(token, chat_id, "Re-rendering the morning report (seconds if today's Yahoo cache "
+                         "is warm, ~2 min if not).")
+    log("report requested from Telegram")
+
+
 def handle(token, allowed_chat, msg):
     """Dispatch one message. Nothing raised in here may reach the poll loop.
 
@@ -234,6 +278,8 @@ def _handle(token, allowed_chat, msg):
         log(f"[drop] message from unauthorised chat {chat_id}: {text[:40]!r}")
         return
     if not text.startswith("/"):
+        if BARE.fullmatch(text) and text not in RESERVED:
+            trigger_band(token, chat_id, text)
         return
 
     parts = text.split()
@@ -241,6 +287,14 @@ def _handle(token, allowed_chat, msg):
     args = parts[1:]          # previously discarded; /plan DMAS needs them
     if cmd == "run":
         trigger_run(token, chat_id)
+    elif cmd == "band":
+        sym = (args[0].upper().removesuffix(".JK") if args else "")
+        if not BARE.fullmatch(sym):
+            send(token, chat_id, "Which ticker? e.g. /band DSSA")
+        else:
+            trigger_band(token, chat_id, sym)
+    elif cmd == "report":
+        trigger_report(token, chat_id)
     elif cmd == "status":
         send(token, chat_id, status_text())
     elif cmd in ("help", "start"):

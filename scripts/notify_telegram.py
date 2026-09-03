@@ -102,12 +102,13 @@ def whoami(token):
 CRLF = "\r\n"
 
 
-def send_document(token: str, chat_id: str, path, caption: str = "") -> bool:
-    """Upload a file. sendMessage cannot carry one, and a workbook is the point.
+def _send_file(token: str, chat_id: str, path, caption: str, method: str, field: str,
+               caption_max: int = 1000) -> bool:
+    """One multipart upload. sendDocument and sendPhoto differ only in method and field name.
 
     multipart/form-data is assembled by hand because this repo stays stdlib-only —
     `requests` is not a dependency anywhere, and adding one for a single upload would be
-    a poor trade. Telegram's document limit is 50 MB; a book export is a few hundred KB.
+    a poor trade.
     """
     import mimetypes
     import uuid
@@ -117,26 +118,41 @@ def send_document(token: str, chat_id: str, path, caption: str = "") -> bool:
     b = uuid.uuid4().hex
     ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     parts = []
-    for k, v in (("chat_id", str(chat_id)), ("caption", caption[:1000])):
+    for k, v in (("chat_id", str(chat_id)), ("caption", caption[:caption_max])):
         if v:
             parts.append(("--" + b + CRLF
                           + 'Content-Disposition: form-data; name="' + k + '"'
                           + CRLF + CRLF + v + CRLF).encode())
     parts.append(("--" + b + CRLF
-                  + 'Content-Disposition: form-data; name="document"; filename="'
+                  + 'Content-Disposition: form-data; name="' + field + '"; filename="'
                   + path.name + '"' + CRLF
                   + "Content-Type: " + ctype + CRLF + CRLF).encode())
     parts.append(path.read_bytes())
     parts.append((CRLF + "--" + b + "--" + CRLF).encode())
     req = urllib.request.Request(
-        API.format(token=token, method="sendDocument"), data=b"".join(parts),
+        API.format(token=token, method=method), data=b"".join(parts),
         headers={"Content-Type": "multipart/form-data; boundary=" + b})
     try:
         with urllib.request.urlopen(req, timeout=180) as r:
             return json.load(r).get("ok", False)
     except Exception as e:                                     # noqa: BLE001
-        print("[!!] sendDocument failed: " + repr(e), file=sys.stderr)
+        print("[!!] " + method + " failed: " + repr(e), file=sys.stderr)
         return False
+
+
+def send_document(token: str, chat_id: str, path, caption: str = "") -> bool:
+    """Upload a file. sendMessage cannot carry one, and a workbook is the point.
+    Telegram's document limit is 50 MB; a book export is a few hundred KB."""
+    return _send_file(token, chat_id, path, caption, "sendDocument", "document")
+
+
+def send_photo(token: str, chat_id: str, path, caption: str = "") -> bool:
+    """Upload an image so it renders inline. Telegram caps a photo at 10 MB and
+    width + height at 10,000 px; a 1200x800 chart is ~100 KB. Caption limit is 1,024."""
+    path = Path(path)
+    if not path.exists() or path.stat().st_size > 10 * 1024 * 1024:
+        return False
+    return _send_file(token, chat_id, path, caption, "sendPhoto", "photo", caption_max=1024)
 
 
 def main():
