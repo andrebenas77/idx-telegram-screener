@@ -394,9 +394,12 @@ def summary_text(session, board, rows, p, i, stale_note) -> str:
     def vh_line(r):
         v = r["vh"]
         tags = ("" if r["in_pool"] else " *") + (" board" if r["symbol"] in seen else "")
-        return ("    %-5s %8s | vp %.2f RVOL %.2f x%.1f | d1 %+.1f%% d5 %+.1f%% hi20 %+.1f%% | Rp%.0fb%s"
+        # the same six-session rvol5 direction label LEG 2 carries: a name rising into the
+        # band and one decaying through it from above 3.0 are opposite situations
+        label = direction(trajectory(p, r["symbol"], i))
+        return ("    %-5s %8s | vp %.2f RVOL %.2f x%.1f | d1 %+.1f%% d5 %+.1f%% hi20 %+.1f%% | Rp%.0fb%s  [%s]"
                 % (r["symbol"], fmt_px(r["close"]), v["vpct50"], r["rvol5"], v["vgrow"],
-                   100 * v["ret1"], 100 * v["ret5"], 100 * v["hi20"], v["value"] / 1e9, tags))
+                   100 * v["ret1"], 100 * v["ret5"], 100 * v["hi20"], v["value"] / 1e9, tags, label))
 
     L.append("")
     L.append("VOLUME HIGH - today's volume above %d%% of its own last %d sessions (%d)"
@@ -419,8 +422,8 @@ def summary_text(session, board, rows, p, i, stale_note) -> str:
         L.append(vh_line(r))
     if not vh_hot:
         L.append("    none")
-    L.append("  vp = share of the last %d sessions below today's volume; x = volume vs prior 5-day mean."
-             % VOL_HIST)
+    L.append("  vp = share of the last %d sessions below today's volume; x = volume vs prior 5-day mean; "
+             "[label] = rvol5 direction over %d sessions." % (VOL_HIST, TRAJ_SESSIONS))
     L.append("  Floor Rp%.0fbn prior-20 ADTV excl. today. Read-out, not a rule; entry was measured at the NEXT close."
              % (VOL_MIN_ADTV_IDR / 1e9))
 
