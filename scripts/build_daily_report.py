@@ -86,7 +86,9 @@ VOL_MIN_ADTV_IDR = 20e9    # VOLUME HIGH floor: mean value over the PRIOR 20 ses
 # see -- the pool is admitted from a top-10 call while the board universe is top-20, leaving
 # ranks 11-20 permanently invisible. Refresh this list when that audit is re-run; it is a
 # stopgap for a structural gap, not a fix for it.
-EXTRA_WATCH = ["INET", "VKTR", "ARCI", "PSAB", "RATU", "RMKE", "CDIA", "COIN"]
+EXTRA_WATCH = ["INET", "VKTR", "ARCI", "PSAB", "RATU", "RMKE", "CDIA", "COIN",
+               # 2026-09-03: outside the 111-name VPS pool but on the VOLUME HIGH reading that week
+               "KOTA", "BWPT", "COCO"]
 
 GUARDED = ["scripts/build_momentum_board.py", "data/panel/momentum_board.json",
            "docs/momentum.html", "docs/index.html"]
