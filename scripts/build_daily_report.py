@@ -7,13 +7,28 @@ produced and adds ZERO Invezgo requests: the extra sections come from Yahoo, whi
 panel EXACTLY for the price leg (147 names, 147 verdicts agreeing, median difference 0.000 on
 rvol5, dd60 and rsi, measured 2026-08-29).
 
-FIVE SECTIONS, ORDERED BY EVIDENTIAL STRENGTH, WHICH IS THE POINT
+SIX SECTIONS, ORDERED BY EVIDENTIAL STRENGTH, WHICH IS THE POINT
 
   1. BOARD          both legs. The only section with a validated result behind it.
-  2. DIRECTION      where rvol5 has been for six sessions.
-  3. LEG 2 ONLY     price passes, accumulation does not. Half a gate, labelled as half.
-  4. UNIVERSE GAP   would qualify, but the panel cannot see it.
-  5. AVOID          rvol5 >= 3.0.
+  2. VOLUME HIGH    today's volume above 90% of the stock's own last 50 sessions, split by
+                    where rvol5 sits. A pre-registered READ-OUT, not a rule (thesis #16(i),
+                    research/idx-volume-momentum, 2026-09-03).
+  3. DIRECTION      where rvol5 has been for six sessions.
+  4. LEG 2 ONLY     price passes, accumulation does not. Half a gate, labelled as half.
+  5. UNIVERSE GAP   would qualify, but the panel cannot see it.
+  6. AVOID          rvol5 >= 3.0.
+
+WHY VOLUME HIGH IS HERE. Over the two-year panel a one-day volume high against the stock's own
+50-session history passed all nine pre-registered checks (Q5-Q1 +1.18pp at 5 days, band
+[+0.83, +1.56], monotone, feature-shift null +0.20pp, 4/4 folds, k=20 +1.29pp). The premium lives
+INSIDE the board's RVOL band: top decile in band +2.56pp/5d and +6.80pp/20d (n=3,107, hit 50-54%);
+below the band it is roughly the market (+1.03pp/5d, +1.76pp/20d, hit 46%); at rvol5 >= 3.0 the hit
+rate is 42% with a negative median. So the section is three lists: IN BAND (the cell that paid),
+BELOW BAND (watch: it becomes the cell above if rvol5 reaches 1.5 while price holds) and HOT.
+Entry in the measurement was the NEXT close, which is exactly what a 07:30 alert allows. Its
+liquidity floor is Rp20bn of prior-20-session ADTV EXCLUDING the signal day, so the spike itself
+cannot lift a thin name over the floor. Hit rates below 50% everywhere: the edge is a right-tail
+mean, never a coin that lands your way more often than not.
 
 WHY DIRECTION IS HERE. The board publishes a LEVEL. On 2026-08-27 KIJA appeared as a Tier A
 candidate at rvol5 2.57 -- having spent the three previous sessions at 3.41, 3.54 and 3.59, all
@@ -62,6 +77,9 @@ MIN_VALUE_IDR = 5e9        # median daily traded value for the leg-2 sections. S
 TRAJ_SESSIONS = 6          # how far back DIRECTION looks
 BREADTH = 0.60             # a date needs this share of symbols to count as a trading day
 CAL_MIN_HISTORY = 120      # features() needs 120 sessions
+VOL_HIST = 50              # VOLUME HIGH: sessions of own history the signal day is ranked against
+VOL_TOP = 0.90             # top decile of that history (vpct50 >= 0.90)
+VOL_MIN_ADTV_IDR = 20e9    # VOLUME HIGH floor: mean value over the PRIOR 20 sessions, signal day excluded
 
 # Names outside the pool worth scoring anyway. Seeded from the traded-value audit of 2026-08-29,
 # which found seven names inside the market's top 60 by median daily value that the panel cannot
@@ -237,6 +255,35 @@ def median_value(p, sym, i, win: int = 20):
     return statistics.median(xs) if len(xs) >= win // 2 else None
 
 
+def volume_high(p, sym, i, hist: int = VOL_HIST):
+    """Thesis #16(i) read-out for the signal day i.
+
+    vpct50 = share of the previous `hist` sessions whose volume was below today's; the harness
+    (research/idx-volume-momentum/volume_shock_test.py) requires every one of those sessions
+    present with volume > 0, so a name with a gap is None, not approximated. Returns are on the
+    adjusted close as the harness measured them; value and ADTV on the raw close.
+    """
+    vo, rc, cl = p.volume.get(sym) or {}, p.raw_close.get(sym) or {}, p.close.get(sym) or {}
+    need = list(range(i - hist, i + 1))
+    if any(j not in vo or j not in rc or j not in cl for j in need):
+        return None
+    v = [vo[j] for j in need]
+    r = [rc[j] for j in need]
+    c = [cl[j] for j in need]
+    if v[-1] <= 0 or any(x <= 0 for x in v[:-1]) or any(x <= 0 for x in r) or any(x <= 0 for x in c):
+        return None
+    prior = v[:-1]
+    return {
+        "vpct50": sum(1 for x in prior if x < v[-1]) / hist,
+        "vgrow": v[-1] / statistics.fmean(v[-6:-1]),
+        "ret1": c[-1] / c[-2] - 1,
+        "ret5": c[-1] / c[-6] - 1,
+        "hi20": r[-1] / max(r[-20:]) - 1,
+        "adtv20": statistics.fmean(vv * rr for vv, rr in zip(v[-21:-1], r[-21:-1])),
+        "value": v[-1] * r[-1],
+    }
+
+
 # --------------------------------------------------------------------------- sections
 
 def trajectory(p, sym, i, n: int = TRAJ_SESSIONS):
@@ -285,6 +332,7 @@ def collect(p, pool, extras, i, log):
             "median_value": mv,
             "pass2": is_momentum(f, B.RVOL_MIN, B.DD_MIN, B.RSI_MIN, B.RVOL_MAX),
             "exhaust": f["rvol5"] >= B.EXHAUST_RVOL,
+            "vh": volume_high(p, s, i),
         })
     log("   scored %d symbols" % len(rows))
     return rows
@@ -331,6 +379,49 @@ def summary_text(session, board, rows, p, i, stale_note) -> str:
         L.append("    rvol5 %s  -> %s"
                  % (" ".join("-" if x is None else "%.2f" % x for x in traj), direction(traj)))
 
+    # ---- VOLUME HIGH: thesis #16(i) read-out. Three lists over one signal, split by rvol5.
+    vh_rows = [r for r in rows if r.get("vh") and r["vh"]["vpct50"] >= VOL_TOP
+               and r["vh"]["adtv20"] >= VOL_MIN_ADTV_IDR]
+    vh_band = sorted((r for r in vh_rows if B.RVOL_MIN <= r["rvol5"] < B.RVOL_MAX),
+                     key=lambda r: -r["vh"]["value"])
+    vh_below = sorted((r for r in vh_rows if r["rvol5"] < B.RVOL_MIN),
+                      key=lambda r: -r["rvol5"])
+    vh_hot = sorted((r for r in vh_rows if r["rvol5"] >= B.EXHAUST_RVOL),
+                    key=lambda r: -r["rvol5"])
+
+    def vh_line(r):
+        v = r["vh"]
+        tags = ("" if r["in_pool"] else " *") + (" board" if r["symbol"] in seen else "")
+        return ("    %-5s %8s | vp %.2f RVOL %.2f x%.1f | d1 %+.1f%% d5 %+.1f%% hi20 %+.1f%% | Rp%.0fb%s"
+                % (r["symbol"], fmt_px(r["close"]), v["vpct50"], r["rvol5"], v["vgrow"],
+                   100 * v["ret1"], 100 * v["ret5"], 100 * v["hi20"], v["value"] / 1e9, tags))
+
+    L.append("")
+    L.append("VOLUME HIGH - today's volume above %d%% of its own last %d sessions (%d)"
+             % (round(VOL_TOP * 100), VOL_HIST, len(vh_rows)))
+    L.append("  IN BAND - RVOL %.1f-%.1f, the cell that paid: +2.6pp/5d +6.8pp/20d, hit 50-54%% (%d)"
+             % (B.RVOL_MIN, B.RVOL_MAX, len(vh_band)))
+    for r in vh_band[:10]:
+        L.append(vh_line(r))
+    if not vh_band:
+        L.append("    none")
+    L.append("  BELOW BAND - watch; roughly the market until RVOL reaches %.1f with price holding (%d)"
+             % (B.RVOL_MIN, len(vh_below)))
+    for r in vh_below[:10]:
+        L.append(vh_line(r))
+    if not vh_below:
+        L.append("    none")
+    L.append("  HOT - RVOL >= %.1f on a volume high, hit 42%%, median negative (%d)"
+             % (B.EXHAUST_RVOL, len(vh_hot)))
+    for r in vh_hot[:6]:
+        L.append(vh_line(r))
+    if not vh_hot:
+        L.append("    none")
+    L.append("  vp = share of the last %d sessions below today's volume; x = volume vs prior 5-day mean."
+             % VOL_HIST)
+    L.append("  Floor Rp%.0fbn prior-20 ADTV excl. today. Read-out, not a rule; entry was measured at the NEXT close."
+             % (VOL_MIN_ADTV_IDR / 1e9))
+
     liquid = [r for r in rows
               if r["median_value"] and r["median_value"] >= MIN_VALUE_IDR]
     only2 = [r for r in liquid if r["pass2"] and r["symbol"] not in seen and r["in_pool"]]
@@ -374,8 +465,8 @@ def summary_text(session, board, rows, p, i, stale_note) -> str:
     L.append("[label] is where rvol5 has been over %d sessions. The board sees only the level;"
              % TRAJ_SESSIONS)
     L.append("a name falling through the band from above 3.0 is not the same as one rising in.")
-    L.append("Sections 2-5 are price-only, from free data, above a Rp%.0fbn/day floor."
-             % (MIN_VALUE_IDR / 1e9))
+    L.append("Sections 2-6 are price-only, from free data, above a Rp%.0fbn/day floor (VOLUME HIGH: Rp%.0fbn)."
+             % (MIN_VALUE_IDR / 1e9, VOL_MIN_ADTV_IDR / 1e9))
     L.append("Only BOARD carries the validated result. Gross of costs.")
     L.append(SITE)
     return "\n".join(L)
