@@ -7,7 +7,7 @@ produced and adds ZERO Invezgo requests: the extra sections come from Yahoo, whi
 panel EXACTLY for the price leg (147 names, 147 verdicts agreeing, median difference 0.000 on
 rvol5, dd60 and rsi, measured 2026-08-29).
 
-SIX SECTIONS, ORDERED BY EVIDENTIAL STRENGTH, WHICH IS THE POINT
+SEVEN SECTIONS, ORDERED BY EVIDENTIAL STRENGTH, WHICH IS THE POINT
 
   1. BOARD          both legs. The only section with a validated result behind it.
   2. VOLUME HIGH    today's volume above 90% of the stock's own last 50 sessions, split by
@@ -17,6 +17,10 @@ SIX SECTIONS, ORDERED BY EVIDENTIAL STRENGTH, WHICH IS THE POINT
   4. LEG 2 ONLY     price passes, accumulation does not. Half a gate, labelled as half.
   5. UNIVERSE GAP   would qualify, but the panel cannot see it.
   6. AVOID          rvol5 >= 3.0.
+  7. VOLUME RAMP    liquid names under heavy volume: build-up, reversal, lock-break, support.
+                    A READ-OUT with no edge behind it: over ten years no setup beat a random
+                    liquid stock after fees (research/idx-volume-ramp, 2026-10-06). Median-value
+                    floor Rp5bn, the regular list only, GOTO shown without odds at or below Rp55.
 
 WHY VOLUME HIGH IS HERE. Over the two-year panel a one-day volume high against the stock's own
 50-session history passed all nine pre-registered checks (Q5-Q1 +1.18pp at 5 days, band
@@ -56,6 +60,7 @@ import json
 import statistics
 import sys
 import time
+import traceback
 import urllib.error
 from pathlib import Path
 
@@ -66,6 +71,13 @@ from fetch_prices import WIB, session_closed, yahoo_chart  # noqa: E402  stdlib 
 from momentum_setup import is_momentum  # noqa: E402
 from overlay_test import features  # noqa: E402
 import build_momentum_board as B  # noqa: E402  the live gate constants, never a copy
+
+try:
+    import volume_ramp_section as VR  # noqa: E402  stdlib only; a read-out, never a gate
+    VR_ERR = None
+except Exception as _e:               # the report must go out even if this section cannot load
+    VR, VR_ERR = None, _e
+    traceback.print_exc(file=sys.stderr)   # stderr is the log; stdout stays message-only
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "data" / "yahoo"          # under data/, which .gitignore already excludes
@@ -470,9 +482,23 @@ def summary_text(session, board, rows, p, i, stale_note) -> str:
     L.append("[label] is where rvol5 has been over %d sessions. The board sees only the level;"
              % TRAJ_SESSIONS)
     L.append("a name falling through the band from above 3.0 is not the same as one rising in.")
-    L.append("Sections 2-6 are price-only, from free data, above a Rp%.0fbn/day floor (VOLUME HIGH: Rp%.0fbn)."
-             % (MIN_VALUE_IDR / 1e9, VOL_MIN_ADTV_IDR / 1e9))
-    L.append("Only BOARD carries the validated result. Gross of costs.")
+
+    # ---- VOLUME RAMP / SUPPORT: read-out only. Last because it is the weakest section. A failure
+    # here degrades to one line and a traceback in the log; it must never take the report down.
+    L.append("")
+    try:
+        if VR is None:
+            raise VR_ERR or RuntimeError("volume_ramp_section not loaded")
+        L.extend(VR.section_lines(p, sorted(p.raw_close), i, fmt_px))
+    except Exception as e:
+        traceback.print_exc(file=sys.stderr)
+        L.append("VOLUME RAMP / SUPPORT - unavailable this run (%s)" % type(e).__name__)
+
+    L.append("")
+    L.append("All sections but BOARD are price-only, from free data, above a Rp%.0fbn/day floor"
+             % (MIN_VALUE_IDR / 1e9))
+    L.append("(VOLUME HIGH: Rp%.0fbn; the GOTO line: no floor)." % (VOL_MIN_ADTV_IDR / 1e9))
+    L.append("Only BOARD carries the validated result. Gross of costs, except VOLUME RAMP (after 0.20% fees).")
     L.append(SITE)
     return "\n".join(L)
 
