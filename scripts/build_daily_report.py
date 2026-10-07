@@ -88,6 +88,7 @@ SITE = "https://andrebenas77.github.io/idx-telegram-screener/momentum.html"
 MIN_VALUE_IDR = 5e9        # median daily traded value for the leg-2 sections. See the docstring.
 TRAJ_SESSIONS = 6          # how far back DIRECTION looks
 BREADTH = 0.60             # a date needs this share of symbols to count as a trading day
+TRADED_MIN = 0.20          # ...and this share of the bars on it must carry volume > 0
 CAL_MIN_HISTORY = 120      # features() needs 120 sessions
 VOL_HIST = 50              # VOLUME HIGH: sessions of own history the signal day is ranked against
 VOL_TOP = 0.90             # top decile of that history (vpct50 >= 0.90)
@@ -173,6 +174,19 @@ def build_yahoo_panel(syms, log):
     CONTIGUOUS sessions, five such dates put a hole in every other symbol's window and cut the
     scored universe from 167 names to ONE. That is an absence of calendar hygiene wearing the
     costume of an absence of candidates, and it is silent.
+
+    Coverage alone is not enough. On other holidays Yahoo emits a bar for EVERY name: 2026-05-14,
+    05-15, 05-27 and 05-28 each carry 162 of 162, with volume 0, high == low and the close
+    repeated from the session before. Those pass any coverage test and then sit inside every 5-,
+    20-, 50- and 60-session window for three months. Measured 2026-10-06 on the saved pull: rvol5
+    read 0.63x its clean value on 05-18 (two phantoms in the 5) and 1.21x on 06-05 (four in the
+    20), putting 21 and 22 names on the wrong side of a gate, and `volume_high`, which refuses a
+    window holding a zero-volume session, returned None for EVERY name from 05-18 to 08-10. So a
+    date must also show volume > 0 on TRADED_MIN of the bars it carries. The paid panel has no
+    session on any of the four, and with them dropped the median rvol5 gap to it on 06-05 falls
+    from 0.23 to 0.0001. The threshold is not a fine judgment: over the 2y pull real sessions
+    never printed below 95.1% traded and the phantoms print 0%. It is 20% to match
+    volume_ramp_section.REAL_MIN_SHARE, so the two filters cannot disagree.
     """
     bars, failed = {}, []
     for k, s in enumerate(syms):
@@ -200,17 +214,24 @@ def build_yahoo_panel(syms, log):
         if (k + 1) % 50 == 0:
             log("   ... %d/%d" % (k + 1, len(syms)))
 
-    cov = {}
+    cov, trd = {}, {}
     for r in bars.values():
-        for d in r:
+        for d, row in r.items():
             cov[d] = cov.get(d, 0) + 1
+            trd[d] = trd.get(d, 0) + (1 if row[4] > 0 else 0)
     need = BREADTH * max(len(bars), 1)
-    dates = sorted(d for d, n in cov.items() if n >= need)
+    covered = sorted(d for d, n in cov.items() if n >= need)
+    dates = [d for d in covered if trd[d] >= TRADED_MIN * cov[d]]
     dropped = sorted(d for d, n in cov.items() if n < need)
+    untraded = [d for d in covered if trd[d] < TRADED_MIN * cov[d]]
     log("   calendar: %d trading dates, %d thin dates dropped%s"
         % (len(dates), len(dropped),
            (" (" + ", ".join("%s:%d" % (d, cov[d]) for d in dropped[-5:]) + ")")
            if dropped else ""))
+    log("   calendar: %d no-trade dates dropped%s"
+        % (len(untraded),
+           (" (" + ", ".join("%s:%d/%d" % (d, trd[d], cov[d]) for d in untraded[-5:]) + ")")
+           if untraded else ""))
 
     p = Shim()
     p.dates = dates
