@@ -307,6 +307,7 @@ def main() -> int:
     new_actions: dict[str, dict] = {}            # fetched for a name being ADDED; merged on write
     stats = {"symbols_ok": 0, "symbols_failed": [], "broker_days": 0, "price_days": 0,
              "brokers_seen": set(), "residual_breaks": [], "action_notes": {}}
+    done: set[str] = set()                       # symbols that actually produced rows this run
 
     for i, sym in enumerate(universe, 1):
         payload = inv.inventory_chart(sym, start.isoformat(), end.isoformat())
@@ -330,7 +331,7 @@ def main() -> int:
         if args.skip_actions or not closes:
             factors, notes = {d: 1.0 for d in closes}, {"applied": [], "unhandled": []}
         else:
-            if cached_actions is not None and (sym in cached_actions or not args.symbols):
+            if cached_actions is not None and not args.symbols:
                 # Incremental runs read the file written by the last full backfill.
                 # Free, and correct as long as it is refreshed periodically — the ARB
                 # break scan below is the backstop for anything it has gone stale on.
@@ -338,12 +339,18 @@ def main() -> int:
             else:
                 actions = sec.corporate_actions(sym)
                 if cached_actions is not None:
-                    # A NAMED symbol the cached file has never held: a name being added to
-                    # the panel. It used to fall through `.get()` as None and be written
-                    # unadjusted, which for DSSA books the 25:1 split of 2026-04-09 as a
-                    # -96% day. Only on `--symbols`: the daily run keeps reading the file
-                    # as it is, because adjusting a 90-day slice of a name whose older rows
-                    # are raw would put the break at the window edge instead.
+                    # A NAMED symbol is a name being added or re-added to the panel, and
+                    # its actions are always fetched fresh (1 credit) and merged into the
+                    # file. Two ways the cached file was wrong for exactly these names:
+                    #   absent — DSSA fell through `.get()` as None and would have been
+                    #            written unadjusted, the 25:1 split of 2026-04-09 a -96% day;
+                    #   stale  — ENRG's record, cached in August, carried its rights issue
+                    #            at the PLANNED ex-date 2026-08-14. The real one was
+                    #            2026-10-05, so the series got a +33% day that never traded
+                    #            and kept the real -28% one.
+                    # Only on `--symbols`: the daily run keeps reading the file as it is,
+                    # because adjusting a 90-day slice of a name whose older rows are raw
+                    # would put the break at the window edge instead.
                     if actions is None:
                         stats["symbols_failed"].append(sym)
                         print(f"[{i:>3}/{len(universe)}] {sym:<6} NOT ADDED — no corporate "
@@ -397,6 +404,7 @@ def main() -> int:
                 stats["broker_days"] += 1
 
         stats["symbols_ok"] += 1
+        done.add(sym)
         if i % 20 == 0 or i == len(universe):
             print(f"[{i:>3}/{len(universe)}] {sym:<6} "
                   f"ok={stats['symbols_ok']} flows={stats['broker_days']:,} "
@@ -437,7 +445,11 @@ def main() -> int:
         # session's original rows intact.
         lo = lo_override or start.isoformat()
         hi = end.isoformat()
-        refreshed = set(universe)
+        # `done`, not the whole universe. A symbol that FAILED this run (Invezgo returned
+        # nothing, or its actions could not be fetched) was not refreshed, and superseding
+        # its rows with nothing deletes its whole window: one bad response at 07:00 cost a
+        # name its last 90 days, and a name needs 60 unbroken sessions to be scored at all.
+        refreshed = done
 
         months = set(buckets)
         for f in OUT.glob(f"{kind}-*.csv.gz"):
