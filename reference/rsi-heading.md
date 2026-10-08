@@ -187,3 +187,127 @@ not interpreted.
 - The universe is today's list (112 hand-kept names plus six added 2026-10-08), so history before
   mid-2026 is selected on later liquidity.
 - About 17 thirty-session blocks. Two years is one market regime and a half.
+
+---
+
+## 9. Result — **H-B: FAIL. H-A: FAIL on the null bar, with every other bar passed.** (2026-10-08)
+
+`heading_test.py` on the production panel, 2026-10-08 14:17-14:26 WIB, panel and benchmark to
+2026-10-07, 2,000 bootstrap draws, 200 null draws. Check 0: **+1.26pp** on n=1,491, PASS.
+Output in `data/panel/heading_test.json`. Nothing above this line was edited after the run.
+
+### 9.1 Baselines
+
+| Population (floored, k=5) | n | Mean excess | Hit |
+|---|---|---|---|
+| Every stock-day | 39,052 | +0.31pp | |
+| Price leg passes, P | 1,761 | +1.24pp | 48.4% |
+| P minus every other stock-day | | **+0.97pp**, band [+0.42, +1.50] | |
+
+Folds for P minus the rest: +1.93, +1.02, +0.79, **+0.09**. The lift of the price leg shrinks through
+the panel and is about nothing in the last fold (2026-04 to 2026-09).
+
+### 9.2 H-A — the broker leg
+
+| Arm (P, floored, k=5) | n | Mean | Median | Hit |
+|---|---|---|---|---|
+| With a qualifying broker | 1,201 | +1.70pp | +0.12pp | 50.5% |
+| Without | 560 | +0.25pp | -1.04pp | 43.8% |
+| Difference | | **+1.45pp**, band [+0.57, +2.43] | | |
+
+Folds +1.51, +2.31, -0.12, +2.82. Read-outs: k=10 +1.57pp [+0.68, +2.42]; k=20 +1.99pp
+[+0.70, +3.27].
+
+| Bar | Result |
+|---|---|
+| 1 difference >= +0.5pp, band clear of zero | PASS |
+| 4 shift null within +/-0.3pp | **FAIL**: null mean -0.37pp (sd 0.51, p05..p95 -1.15 to +0.49) |
+| 5 folds positive >= 3/4 | PASS (3 of 4) |
+| 6 check 0 | PASS |
+| 7 blocks >= 15 in both arms | PASS (15 / 15) |
+
+**Verdict under the declared bars: FAIL.** One bar failed and the bars are not adjustable.
+
+**But the reading of a failure that section 7 wrote in advance does not describe this one, and it
+would be false to apply it.** That sentence ("no evidence that the broker leg adds 0.5pp") was
+written expecting a failure on SIZE. The size bar passed by a wide margin, and the expectation
+stated in section 2 ("less than the +0.5pp bar") was wrong. What failed is the null, and it is
+offset in the direction OPPOSITE to the effect: shifting the labels of each name against its own
+returns gives -0.37pp, so the names that qualify often are, on average, slightly worse names, and
+the within-name timing effect is larger than the headline, not smaller. The real +1.45pp sits beyond
+the 95th percentile of the null (+0.49pp). The bar was designed to catch a harness that manufactures
+the result; here it caught a composition offset that works against it. That is an observation made
+after seeing the numbers and it does not change the verdict.
+
+What the numbers say, verdict aside: **a price-leg day WITHOUT a qualifying broker earned +0.25pp,
+which is what any stock-day earned (+0.31pp).** The lift on price-leg days is on the days someone
+bought in size.
+
+Read-out, by how many brokers qualify on a P day: none +0.25pp (560), one +1.11pp (518), two
++1.39pp (376), **three or more +3.08pp** (307). Monotone, and the same shape the August audit found
+(+1.45 / +1.81 / +3.29). Same panel for the most part, so this is a re-read, not a replication.
+
+### 9.3 H-B — RSI heading
+
+| Arm (P, floored, k=5, lookback 20) | n | Mean | Median | Hit |
+|---|---|---|---|---|
+| Came up through 55 (fresh) | 951 | +1.73pp | +0.18pp | 51.2% |
+| Already above | 763 | +0.80pp | -0.52pp | 45.1% |
+| Difference | | **+0.93pp**, band [+0.13, +1.67] | | |
+
+| Bar | Result |
+|---|---|
+| 1 difference >= +0.5pp, band clear of zero | PASS |
+| 2 level-matched contrast same sign | PASS (+0.91pp; 55-65 +0.65, 65-75 +1.78, 75+ +0.33) |
+| 3 same sign at lookbacks 10 and 40 | **FAIL**: 10 sessions **-1.37pp** [-2.00, -0.81], 4 of 4 folds negative; 40 sessions -0.96pp [-2.32, +0.28] |
+| 4 shift null within +/-0.3pp | PASS (+0.07pp) |
+| 5 folds positive >= 3/4 | **FAIL**: -0.57, +0.59, +2.48, -0.23 |
+| 6 check 0 | PASS |
+| 7 blocks >= 15 in both arms | PASS (15 / 15) |
+
+**Verdict: FAIL. H-B is refuted under its own bars.** The +0.93pp at twenty sessions is one fold
+(+2.48pp in 2025-10 to 2026-04), and the sign does not survive a change of lookback: a name that
+came up through 55 within the last TEN sessions did 1.37pp WORSE than one already above it, with a
+band clear of zero and all four folds negative. "Heading north" is not one thing. Twenty sessions
+was named before the run; ten and forty were sign checks, and they disagree with it.
+
+Balance, fresh / already above: RSI today 73.1 / 72.4, RVOL5 1.91 / 1.88, DD60 -3% / -2%, median
+value Rp26bn / Rp34bn, broker-leg share 69% / 67%. The arms are alike on what was measured.
+
+### 9.4 Read-outs — every one is after the fact, none is a result
+
+- **Longer holding, lookback 20:** k=10 +1.37pp [+0.06, +2.65]; **k=20 +3.32pp [+0.92, +5.66]**,
+  folds +7.66, -0.66, +3.91, +4.53. This is the one figure that fits the "one month swing" the owner
+  described (a monthly lookback held for a month). It is a non-primary horizon read after the
+  primary failed, one of six read-outs printed, and the 10- and 40-session sign checks were not run
+  at k=20. It is a question for its own pre-registration, not a finding.
+- **Change in RSI over 20 sessions, quintiles (fell most to rose most):** +0.26, +0.67, +0.65,
+  +2.28, +2.70pp.
+- **Within "already above", RSI higher than then against lower or equal:** +1.03pp [-0.10, +2.44],
+  folds -1.89, +2.21, +0.91, +1.38. The stated expectation (falling underperforms) has the right
+  sign and a band that touches zero.
+- **Inside the board as it is (P with a broker), fresh against already above:** +0.58pp
+  [-0.58, +1.70]. Heading does not separate the candidates the board already lists.
+- **"Approaching" cell:** +2.78pp on 21 stock-days. Declared too thin before the run; not read.
+- **H-C, top-5 net buying as a share of the day's value, quintiles:** +1.19, +2.03, +1.32, +1.72,
+  **-0.04pp**. Not monotone, and the most concentrated fifth is the worst. Concentration in a few
+  buyers is not the identity-free measure; the COUNT of brokers buying in size (9.2) is.
+
+### 9.5 What changes
+
+- **Nothing on the board.** Gates, ranking and lists are as they were.
+- The `then->now` label stays as two numbers with no word on it. Fresh names are not marked or
+  listed first (section 8, "if H-B fails").
+- The broker leg stays. The point that WHO the broker is does not matter is consistent with
+  everything here; the idea that the leg itself can be thought about less is not.
+
+### 9.6 What is NOT claimed, and the follow-ups that would each need their own pre-registration
+
+- Not claimed: that the broker leg "passed". It failed a declared bar.
+- Not claimed: that a month-long RSI swing pays over a month. One read-out says so.
+- Follow-up 1: breadth as a ranking input. Three or more qualifying brokers against one, as a
+  primary test, on a forward period; the two-year panel has now been read for this twice.
+- Follow-up 2: lookback 20 with a 20-session horizon as its own primary, with the lookback sign
+  checks run at that horizon.
+- Follow-up 3: the lift of the price leg by fold (+1.93, +1.02, +0.79, +0.09). If the last fold is
+  the regime, the board is leaning on the broker leg more than its history suggests.
