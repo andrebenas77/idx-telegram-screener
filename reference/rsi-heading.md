@@ -87,7 +87,38 @@ resamples whole dates in 30-session blocks for that reason.
 
 ## 4. Measured occupancy — counts only, BEFORE any return
 
-*(pasted from `heading_test.py --occupancy` on the production panel; see the commit that adds it)*
+`heading_test.py --occupancy` on the production panel, 2026-10-08 14:16 WIB: 117 symbols, 517
+sessions (2024-08-07 to 2026-10-07), 513 benchmark days. Parity with `features()`: 0 mismatches on
+300 sampled stock-days. No return was computed on this path.
+
+| Cell | Stock-days |
+|---|---|
+| With features | 50,770 |
+| Above the Rp5bn floor | 40,297 (112 names) |
+| Price leg passes, P | 1,808 (4.5% of floored days; 376 dates, 101 names) |
+| H-A: P with a qualifying broker / without | 1,235 / 573 (15 blocks each) |
+| H-B, lookback 20: fresh / already above / no RSI then | 987 / 772 / 49 (15 blocks each) |
+| H-B, lookback 10 | 891 / 892 (15 blocks each) |
+| H-B, lookback 40 | 1,072 / 620 (14 blocks each: under 15, a sign check only) |
+| "Approaching" read-out cell | 22 |
+
+Brokers qualifying on a P day: none 573, one 537, two 384, three or more 314. The board without the
+floor is 1,550 stock-days.
+
+H-B by today's RSI (fresh / already above): 55-65 238 / 212; 65-75 344 / 248; 75+ 405 / 312. Fresh is
+the larger arm in every band, so the level-matched contrast has both arms in every cell.
+
+H-B by calendar fold (fresh / already above): 101 / 67; 432 / 325; 336 / 219; 118 / 161. Every fold
+clears the 20-per-arm minimum. Folds 2 and 3 hold 75% of the days.
+
+Within "already above": RSI higher than twenty sessions ago 529, lower or equal 243.
+
+Top-5 net buying as a share of the day's value on P days: p10 0.10, p25 0.15, median 0.23, p75 0.35,
+p90 0.49.
+
+**Read before the run:** both primary tests sit exactly on the 15-block line for an inferential
+band, and the "approaching" cell (22 days) is too thin to say anything about; it will be printed and
+not interpreted.
 
 ## 5. Inference
 
