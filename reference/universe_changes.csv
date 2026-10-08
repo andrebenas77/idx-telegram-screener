@@ -1,2 +1,3 @@
 date,symbol,action,check0_before_pp,check0_after_pp,events_before,events_after,note
 2026-10-08,DSSA,added to panel (liquid=1),1.2545,1.2555,1305,1314,"top-40 by value on 40 of 40 sessions; 470 bars from 2024-10-14; 25:1 split of 2026-04-09 adjusted; 9 candidate days; check 0 bar +0.50pp; benchmark-ihsg.csv ends 2026-08-06 so check 0 reads events to early Aug only"
+2026-10-08,SQMI,added to panel (liquid=1),1.2555,1.2342,1314,1316,"top-40 by value on 9 of 40 sessions; 311 bars from 2024-10-14 with gaps (18 of 25 months); no residual break in the window; 2 candidate days (2026-07-17 -11.0%, 07-20 -0.9% 5d excess); replay lists it on 2026-09-01 and 09-09, AVOID 09-02/03/04/08; check 0 fell 0.021pp"
