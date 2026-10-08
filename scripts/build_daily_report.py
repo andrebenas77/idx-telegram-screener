@@ -113,6 +113,8 @@ EXTRA_WATCH = ["INET", "VKTR", "ARCI", "PSAB", "RATU", "RMKE", "CDIA", "COIN",
 MARKET_HOT = PANEL / "market_hot.json"   # written by build_market_hot.py just before this runs
 PANEL_RECENT = 5           # a panel name is live if it has a bar in this many trailing sessions
 QUEUE_SHOWN = 12           # names on the promotion queue line
+BREAK_RATIO = 2.0          # a one-session close ratio at or beyond this, either way, is not a trade
+IDEAS_SHOWN = 15           # names per line in the 07:00 VOLUME HIGH block
 
 GUARDED = ["scripts/build_momentum_board.py", "data/panel/momentum_board.json",
            "docs/momentum.html", "docs/index.html"]
@@ -330,6 +332,26 @@ def volume_high(p, sym, i, hist: int = VOL_HIST):
     }
 
 
+def price_break(p, sym, i, hist: int = VOL_HIST):
+    """The date of a one-session close move no auction can print, inside the volume lookback.
+
+    The upper auto-rejection limit is 35%, so a close that halves or doubles overnight is a
+    corporate action Yahoo has not carried back. FORU is the case: its split landed on
+    2026-09-14 and the bars before it were left at the old price AND the old share count
+    (3,720 on 5.6m shares, then 238 on 85m). Every volume before that date is in a different
+    unit, so "above 90% of its own last 50 sessions" was true of the unit change, and on
+    2026-10-07 FORU printed IN BAND with hi20 -96.1%. A rights issue does not trip this (INET
+    fell 39% to TERP on 2026-01-05) and should not: it reprices the share, it does not
+    rescale the volume.
+    """
+    rc = p.raw_close.get(sym) or {}
+    for j in range(i - hist + 1, i + 1):
+        a, b = rc.get(j - 1), rc.get(j)
+        if a and b and a > 0 and b > 0 and (b / a >= BREAK_RATIO or a / b >= BREAK_RATIO):
+            return p.dates[j]
+    return None
+
+
 # --------------------------------------------------------------------------- sections
 
 def trajectory(p, sym, i, n: int = TRAJ_SESSIONS):
@@ -379,9 +401,56 @@ def collect(p, pool, extras, i, log):
             "pass2": is_momentum(f, B.RVOL_MIN, B.DD_MIN, B.RSI_MIN, B.RVOL_MAX),
             "exhaust": f["rvol5"] >= B.EXHAUST_RVOL,
             "vh": volume_high(p, s, i),
+            "vh_break": price_break(p, s, i),
         })
     log("   scored %d symbols" % len(rows))
     return rows
+
+
+def volume_high_lists(rows):
+    """VOLUME HIGH, split by where rvol5 sits. One selection, read by the 07:30 report and by
+    the 07:00 block, so the two can never name different stocks.
+
+    Returns (kept, in_band, below_band, hot, left_out). `left_out` is the names that cleared
+    the signal and the floor but carry a broken price history; they are reported, not shown.
+    """
+    hits = [r for r in rows if r.get("vh") and r["vh"]["vpct50"] >= VOL_TOP
+            and r["vh"]["adtv20"] >= VOL_MIN_ADTV_IDR]
+    left_out = sorted((r for r in hits if r.get("vh_break")), key=lambda r: r["symbol"])
+    kept = [r for r in hits if not r.get("vh_break")]
+    band = sorted((r for r in kept if B.RVOL_MIN <= r["rvol5"] < B.RVOL_MAX),
+                  key=lambda r: -r["vh"]["value"])
+    below = sorted((r for r in kept if r["rvol5"] < B.RVOL_MIN), key=lambda r: -r["rvol5"])
+    hot = sorted((r for r in kept if r["rvol5"] >= B.EXHAUST_RVOL), key=lambda r: -r["rvol5"])
+    return kept, band, below, hot, left_out
+
+
+def ideas_text(session, rows) -> str:
+    """The VOLUME HIGH names on their own, for the 07:00 screener message.
+
+    Owner's instruction, 2026-10-08: these lists are where a trading idea starts, so they go
+    out with the screener every morning and not only in the 07:30 report. Names only: the
+    rows (price, vp, RVOL, returns) follow at 07:30. All three lines always print, "none"
+    included, so a quiet day reads as quiet and not as a block that failed to build.
+    """
+    _, band, below, hot, left_out = volume_high_lists(rows)
+
+    def names(rs):
+        if not rs:
+            return "none"
+        out = ", ".join(r["symbol"] + ("" if r["in_pool"] else "*") for r in rs[:IDEAS_SHOWN])
+        return out + (" (+%d more)" % (len(rs) - IDEAS_SHOWN) if len(rs) > IDEAS_SHOWN else "")
+
+    L = ["VOLUME HIGH - session %s, price only" % session,
+         "  in band (RVOL %.1f-%.1f): %s" % (B.RVOL_MIN, B.RVOL_MAX, names(band)),
+         "  below band (watch): %s" % names(below),
+         "  hot (RVOL %.1f+): %s" % (B.EXHAUST_RVOL, names(hot))]
+    if left_out:
+        L.append("  left out, price history broken: %s" % names(left_out))
+    L.append("  Volume above %d%% of the name's own last %d sessions. * = not on the board panel."
+             % (round(VOL_TOP * 100), VOL_HIST))
+    L.append("  A read-out, not the validated board. Rows at 07:30.")
+    return "\n".join(L)
 
 
 # --------------------------------------------------------------------------- universe
@@ -479,14 +548,7 @@ def summary_text(session, board, rows, p, i, stale_note, universe=None, regular=
                  % (" ".join("-" if x is None else "%.2f" % x for x in traj), direction(traj)))
 
     # ---- VOLUME HIGH: thesis #16(i) read-out. Three lists over one signal, split by rvol5.
-    vh_rows = [r for r in rows if r.get("vh") and r["vh"]["vpct50"] >= VOL_TOP
-               and r["vh"]["adtv20"] >= VOL_MIN_ADTV_IDR]
-    vh_band = sorted((r for r in vh_rows if B.RVOL_MIN <= r["rvol5"] < B.RVOL_MAX),
-                     key=lambda r: -r["vh"]["value"])
-    vh_below = sorted((r for r in vh_rows if r["rvol5"] < B.RVOL_MIN),
-                      key=lambda r: -r["rvol5"])
-    vh_hot = sorted((r for r in vh_rows if r["rvol5"] >= B.EXHAUST_RVOL),
-                    key=lambda r: -r["rvol5"])
+    vh_rows, vh_band, vh_below, vh_hot, vh_out = volume_high_lists(rows)
 
     def vh_line(r):
         v = r["vh"]
@@ -519,6 +581,11 @@ def summary_text(session, board, rows, p, i, stale_note, universe=None, regular=
         L.append(vh_line(r))
     if not vh_hot:
         L.append("    none")
+    if vh_out:
+        L.append("  LEFT OUT - a close that halved or doubled in one session inside the last %d, "
+                 "so its volumes are in two units: %s"
+                 % (VOL_HIST, ", ".join("%s%s (%s)" % (r["symbol"], "" if r["in_pool"] else "*",
+                                                      r["vh_break"]) for r in vh_out)))
     L.append("  vp = share of the last %d sessions below today's volume; x = volume vs prior 5-day mean; "
              "[label] = rvol5 direction over %d sessions." % (VOL_HIST, TRAJ_SESSIONS))
     L.append("  Floor Rp%.0fbn prior-20 ADTV excl. today. Read-out, not a rule; entry was measured at the NEXT close."
@@ -606,11 +673,14 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--backtest-render", type=int, default=0,
                     help="render the last N sessions and stop, for eyeballing")
+    ap.add_argument("--ideas", action="store_true",
+                    help="print only the VOLUME HIGH names, for the 07:00 screener message")
     a = ap.parse_args()
 
     # The house idiom: under --summary stdout carries ONLY the message, so $(... --summary)
-    # in run_daily.sh captures cleanly.
-    log = (lambda *x: None) if a.summary else (lambda *x: print(*x))
+    # in run_daily.sh captures cleanly. --ideas is captured the same way.
+    quiet = a.summary or a.ideas
+    log = (lambda *x: None) if quiet else (lambda *x: print(*x))
 
     before = fingerprints()
 
@@ -672,6 +742,9 @@ def main() -> int:
             stale = ("BOARD snapshot is session %s, so it is omitted below; the price sections "
                      "are %s." % (board["session"], session))
         rows = collect(p, live, set(pool) | set(extras), i, log)
+        if a.ideas:
+            print(ideas_text(session, rows))
+            continue
         regular = sorted(s for s in set(pool) | set(EXTRA_WATCH) if s in p.raw_close)
         text = summary_text(session, board if matched else {}, rows, p, i, stale,
                             universe_note(hot, session, live), regular)
@@ -682,7 +755,7 @@ def main() -> int:
             print(text)
 
     assert_unmoved(before)
-    if not a.summary:
+    if not quiet:
         print("\nguarded files verified unchanged.")
     return 0
 

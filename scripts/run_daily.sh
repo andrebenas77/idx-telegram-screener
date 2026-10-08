@@ -194,9 +194,28 @@ else
         fi
     fi
 fi
+
+# ---- VOLUME HIGH names (price only, free) ----------------------------------------------
+#
+# Owner's instruction, 2026-10-08: the names trading on a volume high go out with the
+# screener every morning, because that is where a trading idea starts. They used to
+# appear only in the 07:30 report. Same code and same selection as that report
+# (build_daily_report.volume_high_lists), so the two messages cannot disagree; this one
+# carries the names, the report the rows.
+#
+# Outside the panel-refresh branch on purpose: it reads Yahoo, not Invezgo, so a failed
+# panel refresh does not cost it. It states its own session, and that follows the board
+# snapshot on disk. build_market_hot.py first, so a name that entered the market's top 40
+# yesterday is scored today; the 07:30 job rebuilds the same list and reuses the day's
+# price cache. Warn-not-fail.
+VH_SUMMARY=""
+python3 "${ROOT}/scripts/build_market_hot.py" --quiet >>"$LOG" 2>&1 \
+    || log "[!] market list not rebuilt — VOLUME HIGH reads the last list on disk"
+VH_SUMMARY="$(timeout 600 python3 "${ROOT}/scripts/build_daily_report.py" --ideas 2>>"$LOG")"
 set -e
 $MOM_OK && log "momentum board built" || log "[!!] momentum board NOT built"
 $BRK_OK && log "broker board built" || log "[!] broker board NOT built"
+[[ -n "$VH_SUMMARY" ]] && log "volume-high names built" || log "[!] volume-high names NOT built"
 
 # --output-format json wraps the reply; fall back to raw output if it isn't JSON
 # (e.g. an auth error printed as plain text).
@@ -273,6 +292,9 @@ elif ! grep -q "IDX Broker Behaviour" "${ROOT}/docs/brokers.html" 2>/dev/null; t
     WARN+=("docs/brokers.html looks malformed")
 fi
 
+# 6d. The VOLUME HIGH block is promised every morning, so its absence is said, not skipped.
+[[ -n "$VH_SUMMARY" ]] || WARN+=("VOLUME HIGH names not built — see the log; the 07:30 report still carries them")
+
 # 6c. The benchmark's age. A stale one raises nothing anywhere — excess returns just come
 # back empty for the missing dates — so it has to be counted and said out loud.
 BENCH_LAG="$(python3 "${ROOT}/scripts/fetch_benchmark.py" --lag 2>>"$LOG" || true)"
@@ -324,6 +346,16 @@ if [[ -n "$MOM_SUMMARY" ]]; then
 ${MOM_SUMMARY}"
 fi
 
+# Straight after the momentum board: the board is the validated list, this is the
+# price-only list beside it, and they are read together.
+VHTEXT=""
+if [[ -n "$VH_SUMMARY" ]]; then
+    VHTEXT="
+
+------------------------------
+${VH_SUMMARY}"
+fi
+
 # The broker board rides in the same message as the crowded and momentum boards.
 # notify_telegram.py chunks at 3800 chars on line boundaries, so three sections in one
 # text is safe; three separate notifications at 07:00 would not be.
@@ -340,7 +372,7 @@ if $OK; then
     notify --title "IDX screener — ${DATE}" \
            --text "${SUMMARY}
 
-Board: ${SITE}${MOMTEXT}${BRKTEXT}${WARNTEXT}"
+Board: ${SITE}${MOMTEXT}${VHTEXT}${BRKTEXT}${WARNTEXT}"
     log "=== run ok ==="
 else
     REASON=""
