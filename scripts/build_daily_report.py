@@ -115,6 +115,7 @@ PANEL_RECENT = 5           # a panel name is live if it has a bar in this many t
 QUEUE_SHOWN = 12           # names on the promotion queue line
 BREAK_RATIO = 2.0          # a one-session close ratio at or beyond this, either way, is not a trade
 IDEAS_SHOWN = 15           # names per line in the 07:00 VOLUME HIGH block
+RSI_BACK = 20              # RSI HEADING: sessions back that today's RSI is set against. See rsi_txt.
 
 GUARDED = ["scripts/build_momentum_board.py", "data/panel/momentum_board.json",
            "docs/momentum.html", "docs/index.html"]
@@ -392,7 +393,9 @@ def collect(p, pool, extras, i, log):
         if not f or f.get("rvol5") is None:
             continue
         mv = median_value(p, s, i)
+        f_then = features(p, s, i - RSI_BACK)
         rows.append({
+            "rsi_then": f_then["rsi"] if f_then else None,
             "symbol": s, "in_pool": s in pool,
             "rvol5": f["rvol5"], "rsi": f["rsi"], "dd60": f["dd60"],
             "cmf20": f.get("cmf20"), "clv": f.get("clv"), "trend": f.get("trend"),
@@ -405,6 +408,24 @@ def collect(p, pool, extras, i, log):
         })
     log("   scored %d symbols" % len(rows))
     return rows
+
+
+def rsi_txt(r) -> str:
+    """RSI HEADING as "then->now", e.g. "44->58": RSI RSI_BACK sessions ago, and RSI today.
+
+    The gate reads a LEVEL (RSI >= 55), so 58 on the way up from 44 and 58 on the way down
+    from 80 are the same row to it. The owner's reading (2026-10-08) is that the way it is
+    heading matters, and a move up to 55+ from a lower number is the good case when RVOL and
+    momentum are there. Twenty sessions, their call: "Indonesia market is a little bit slow",
+    so the swing is a month, not a week. Both numbers are printed and no word is put on
+    them: a move through 55 is visible as it stands.
+
+    A LABEL, NOT A GATE. Whether heading separates winners is being tested
+    (reference/rsi-heading.md); nothing here changes which names are listed. "?" when the
+    name has too little history 20 sessions back to have an RSI.
+    """
+    then = r.get("rsi_then")
+    return "%s->%.0f" % ("?" if then is None else "%.0f" % then, r["rsi"])
 
 
 def volume_high_lists(rows):
@@ -425,31 +446,42 @@ def volume_high_lists(rows):
     return kept, band, below, hot, left_out
 
 
-def ideas_text(session, rows) -> str:
+def ideas_text(session, rows, board_names=None) -> str:
     """The VOLUME HIGH names on their own, for the 07:00 screener message.
 
     Owner's instruction, 2026-10-08: these lists are where a trading idea starts, so they go
-    out with the screener every morning and not only in the 07:30 report. Names only: the
-    rows (price, vp, RVOL, returns) follow at 07:30. All three lines always print, "none"
-    included, so a quiet day reads as quiet and not as a block that failed to build.
+    out with the screener every morning and not only in the 07:30 report. Names and RSI
+    heading only: the rows (price, vp, RVOL, returns) follow at 07:30. All three lines always
+    print, "none" included, so a quiet day reads as quiet and not as a block that failed to
+    build.
+
+    `board_names` is the momentum board's own list for this session, or None when the
+    snapshot on disk covers another one. It gets a line here because the board block above
+    this one in the message prints RSI as a level, and the heading is the thing being added.
     """
     _, band, below, hot, left_out = volume_high_lists(rows)
+    by = {r["symbol"]: r for r in rows}
 
-    def names(rs):
+    def names(rs, heading=True):
         if not rs:
             return "none"
-        out = ", ".join(r["symbol"] + ("" if r["in_pool"] else "*") for r in rs[:IDEAS_SHOWN])
+        out = ", ".join(r["symbol"] + ("" if r["in_pool"] else "*")
+                        + (" " + rsi_txt(r) if heading else "") for r in rs[:IDEAS_SHOWN])
         return out + (" (+%d more)" % (len(rs) - IDEAS_SHOWN) if len(rs) > IDEAS_SHOWN else "")
 
-    L = ["VOLUME HIGH - session %s, price only" % session,
-         "  in band (RVOL %.1f-%.1f): %s" % (B.RVOL_MIN, B.RVOL_MAX, names(band)),
-         "  below band (watch): %s" % names(below),
-         "  hot (RVOL %.1f+): %s" % (B.EXHAUST_RVOL, names(hot))]
+    L = ["VOLUME HIGH - session %s, price only" % session]
+    if board_names is not None:
+        L.append("  board names: %s" % (", ".join(
+            "%s %s" % (n, rsi_txt(by[n])) if n in by else n for n in board_names) or "none"))
+    L += ["  in band (RVOL %.1f-%.1f): %s" % (B.RVOL_MIN, B.RVOL_MAX, names(band)),
+          "  below band (watch): %s" % names(below),
+          "  hot (RVOL %.1f+): %s" % (B.EXHAUST_RVOL, names(hot))]
     if left_out:
-        L.append("  left out, price history broken: %s" % names(left_out))
-    L.append("  Volume above %d%% of the name's own last %d sessions. * = not on the board panel."
+        L.append("  left out, price history broken: %s" % names(left_out, heading=False))
+    L.append("  a->b = RSI %d sessions ago -> now: a label, not a gate. * = not on the board panel."
+             % RSI_BACK)
+    L.append("  Volume above %d%% of the name's own last %d sessions. Not the validated board. Rows at 07:30."
              % (round(VOL_TOP * 100), VOL_HIST))
-    L.append("  A read-out, not the validated board. Rows at 07:30.")
     return "\n".join(L)
 
 
@@ -540,8 +572,8 @@ def summary_text(session, board, rows, p, i, stale_note, universe=None, regular=
         if not r:
             L.append("  %s (not scoreable from price data)" % n)
             continue
-        L.append("  %-5s %8s | RVOL %.2f RSI %.0f DD60 %+.3f CMF %s"
-                 % (n, fmt_px(r["close"]), r["rvol5"], r["rsi"], r["dd60"],
+        L.append("  %-5s %8s | RVOL %.2f RSI %s DD60 %+.3f CMF %s"
+                 % (n, fmt_px(r["close"]), r["rvol5"], rsi_txt(r), r["dd60"],
                     "-" if r["cmf20"] is None else "%+.2f" % r["cmf20"]))
         traj = trajectory(p, n, i)
         L.append("    rvol5 %s  -> %s"
@@ -556,8 +588,8 @@ def summary_text(session, board, rows, p, i, stale_note, universe=None, regular=
         # the same six-session rvol5 direction label LEG 2 carries: a name rising into the
         # band and one decaying through it from above 3.0 are opposite situations
         label = direction(trajectory(p, r["symbol"], i))
-        return ("    %-5s %8s | vp %.2f RVOL %.2f x%.1f | d1 %+.1f%% d5 %+.1f%% hi20 %+.1f%% | Rp%.0fb%s  [%s]"
-                % (r["symbol"], fmt_px(r["close"]), v["vpct50"], r["rvol5"], v["vgrow"],
+        return ("    %-5s %8s | vp %.2f RVOL %.2f x%.1f RSI %s | d1 %+.1f%% d5 %+.1f%% hi20 %+.1f%% | Rp%.0fb%s  [%s]"
+                % (r["symbol"], fmt_px(r["close"]), v["vpct50"], r["rvol5"], v["vgrow"], rsi_txt(r),
                    100 * v["ret1"], 100 * v["ret5"], 100 * v["hi20"], v["value"] / 1e9, tags, label))
 
     L.append("")
@@ -604,8 +636,8 @@ def summary_text(session, board, rows, p, i, stale_note, universe=None, regular=
     L.append("LEG 2 ONLY - price passes, accumulation not checked (%d)" % len(only2))
     L.append("  half a gate. no evidence anyone is buying these.")
     for r in only2[:12]:
-        L.append("  %-5s RVOL %.2f RSI %.0f DD60 %+.3f CMF %s  [%s]"
-                 % (r["symbol"], r["rvol5"], r["rsi"], r["dd60"],
+        L.append("  %-5s RVOL %.2f RSI %s DD60 %+.3f CMF %s  [%s]"
+                 % (r["symbol"], r["rvol5"], rsi_txt(r), r["dd60"],
                     "-" if r["cmf20"] is None else "%+.2f" % r["cmf20"],
                     direction(trajectory(p, r["symbol"], i))))
     if not only2:
@@ -614,8 +646,8 @@ def summary_text(session, board, rows, p, i, stale_note, universe=None, regular=
     L.append("")
     L.append("UNIVERSE GAP - would qualify, panel cannot see it (%d)" % len(gap))
     for r in gap[:8]:
-        L.append("  %-5s RVOL %.2f RSI %.0f  Rp%.1fb/day  [%s]"
-                 % (r["symbol"], r["rvol5"], r["rsi"], (r["median_value"] or 0) / 1e9,
+        L.append("  %-5s RVOL %.2f RSI %s  Rp%.1fb/day  [%s]"
+                 % (r["symbol"], r["rvol5"], rsi_txt(r), (r["median_value"] or 0) / 1e9,
                     direction(trajectory(p, r["symbol"], i))))
     if not gap:
         L.append("  none")
@@ -625,13 +657,15 @@ def summary_text(session, board, rows, p, i, stale_note, universe=None, regular=
     L.append("AVOID - RVOL >= %.1f, the edge inverts above here (%d)" % (B.EXHAUST_RVOL,
                                                                         len(avoid)))
     for r in avoid[:8]:
-        L.append("  %-5s RVOL %.2f RSI %.0f  [%s]"
-                 % (r["symbol"], r["rvol5"], r["rsi"],
+        L.append("  %-5s RVOL %.2f RSI %s  [%s]"
+                 % (r["symbol"], r["rvol5"], rsi_txt(r),
                     direction(trajectory(p, r["symbol"], i))))
     if not avoid:
         L.append("  none")
 
     L.append("")
+    L.append("RSI a->b is RSI %d sessions ago -> now. A label under test, not a gate: the gates read only b."
+             % RSI_BACK)
     L.append("[label] is where rvol5 has been over %d sessions. The board sees only the level;"
              % TRAJ_SESSIONS)
     L.append("a name falling through the band from above 3.0 is not the same as one rising in.")
@@ -743,7 +777,8 @@ def main() -> int:
                      "are %s." % (board["session"], session))
         rows = collect(p, live, set(pool) | set(extras), i, log)
         if a.ideas:
-            print(ideas_text(session, rows))
+            print(ideas_text(session, rows, list(dict.fromkeys(
+                c["symbol"] for c in board.get("candidates") or [])) if matched else None))
             continue
         regular = sorted(s for s in set(pool) | set(EXTRA_WATCH) if s in p.raw_close)
         text = summary_text(session, board if matched else {}, rows, p, i, stale,
