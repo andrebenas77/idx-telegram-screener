@@ -111,6 +111,14 @@ MOM_OK=false
 BRK_SUMMARY=""
 BRK_OK=false
 set +e
+# IHSG benchmark, topped up from its own last date (1 Sectors credit). No job called this
+# between 2026-08-07 and 2026-10-08, and for those two months every excess return after
+# early August was silently absent: the broker ranks below were scored on events to 08-06.
+# Warn-not-fail — the board still builds on the series already on disk, and check 6c at
+# the end of this script puts its age in the morning message.
+python3 "${ROOT}/scripts/fetch_benchmark.py" --incremental >>"$LOG" 2>&1 \
+    || log "[!] benchmark refresh failed — excess returns stop at the last date on disk"
+
 python3 "${ROOT}/scripts/backfill_panel.py" --incremental --window 90 >>"$LOG" 2>&1
 REFRESH_CODE=$?
 if [[ $REFRESH_CODE -ne 0 ]]; then
@@ -263,6 +271,15 @@ if ! $BRK_OK; then
     WARN+=("broker board not rebuilt — see the log")
 elif ! grep -q "IDX Broker Behaviour" "${ROOT}/docs/brokers.html" 2>/dev/null; then
     WARN+=("docs/brokers.html looks malformed")
+fi
+
+# 6c. The benchmark's age. A stale one raises nothing anywhere — excess returns just come
+# back empty for the missing dates — so it has to be counted and said out loud.
+BENCH_LAG="$(python3 "${ROOT}/scripts/fetch_benchmark.py" --lag 2>>"$LOG" || true)"
+if ! [[ "$BENCH_LAG" =~ ^[0-9]+$ ]]; then
+    WARN+=("could not read the IHSG benchmark's age")
+elif [[ "$BENCH_LAG" -gt 2 ]]; then
+    WARN+=("IHSG benchmark is ${BENCH_LAG} sessions behind the panel — excess returns and broker ranks are stale")
 fi
 
 for w in ${WARN[@]+"${WARN[@]}"};  do log "[warn] $w"; done
