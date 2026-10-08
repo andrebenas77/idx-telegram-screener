@@ -15,7 +15,10 @@ SEVEN SECTIONS, ORDERED BY EVIDENTIAL STRENGTH, WHICH IS THE POINT
                     research/idx-volume-momentum, 2026-09-03).
   3. DIRECTION      where rvol5 has been for six sessions.
   4. LEG 2 ONLY     price passes, accumulation does not. Half a gate, labelled as half.
-  5. UNIVERSE GAP   would qualify, but the panel cannot see it.
+  5. UNIVERSE GAP   would qualify, but the panel cannot see it. Every name on the market's
+                    top-40-by-value list (build_market_hot.py, whole roster, free) is scored for
+                    sections 2 to 6, and the ones the board lacks are queued here by how long they
+                    have been on that list. Added 2026-10-08 after SQMI ran 63 to 106 unseen.
   6. AVOID          rvol5 >= 3.0.
   7. VOLUME RAMP    liquid names under heavy volume: build-up, reversal, lock-break, support.
                     A READ-OUT with no edge behind it: over ten years no setup beat a random
@@ -99,9 +102,17 @@ VOL_MIN_ADTV_IDR = 20e9    # VOLUME HIGH floor: mean value over the PRIOR 20 ses
 # see -- the pool is admitted from a top-10 call while the board universe is top-20, leaving
 # ranks 11-20 permanently invisible. Refresh this list when that audit is re-run; it is a
 # stopgap for a structural gap, not a fix for it.
+#
+# 2026-10-08: the fix is MARKET_HOT below. build_market_hot.py ranks the whole roster every
+# morning and every name on its top-40 list is scored here, so this list is now only the
+# fallback for a morning on which that file is missing. All eleven are on the top-40 list.
 EXTRA_WATCH = ["INET", "VKTR", "ARCI", "PSAB", "RATU", "RMKE", "CDIA", "COIN",
                # 2026-09-03: outside the 111-name VPS pool but on the VOLUME HIGH reading that week
                "KOTA", "BWPT", "COCO"]
+
+MARKET_HOT = PANEL / "market_hot.json"   # written by build_market_hot.py just before this runs
+PANEL_RECENT = 5           # a panel name is live if it has a bar in this many trailing sessions
+QUEUE_SHOWN = 12           # names on the promotion queue line
 
 GUARDED = ["scripts/build_momentum_board.py", "data/panel/momentum_board.json",
            "docs/momentum.html", "docs/index.html"]
@@ -373,9 +384,59 @@ def collect(p, pool, extras, i, log):
     return rows
 
 
+# --------------------------------------------------------------------------- universe
+
+def load_market_hot() -> dict | None:
+    """The market's top-40 list, or None. A missing or unreadable file is not an error here:
+    the report still goes out on the hand-kept extras and `universe_note` says which it used."""
+    try:
+        hot = json.loads(MARKET_HOT.read_text(encoding="utf-8"))
+        return hot if hot.get("hot") and hot.get("session") else None
+    except (OSError, ValueError):
+        return None
+
+
+def universe_note(hot, session, live) -> tuple[str, list]:
+    """One header line and the queue lines printed under UNIVERSE GAP.
+
+    The queue is the hot names the board cannot score, ordered by how many of the last sessions
+    they spent in the market's top N. It is a list of what to ADD to the panel, so it carries
+    the report's own median floor and says how many names that removed, never dropping them
+    silently. `live` decides membership, not the flag stored in the file: the file is written
+    by another process and this report must describe the panel it is itself reading.
+    """
+    if not hot:
+        return ("UNIVERSE: panel %d | market list UNAVAILABLE, hand-kept extras only"
+                % len(live)), ["  market list unavailable this run: only the hand-kept extras "
+                               "were scored outside the panel."]
+    n, lb = hot.get("top_n", 0), (hot.get("window") or {}).get("sessions", 0)
+    outside = [r for r in hot["hot"] if r["symbol"] not in live]
+    head = ("UNIVERSE: panel %d | market top-%d list %d names, %d outside the panel (scored, *)"
+            % (len(live), n, len(hot["hot"]), len(outside)))
+    lines = []
+    if hot["session"] < session:
+        head += " | LIST IS FROM %s" % hot["session"]
+        lines.append("  the market list is from session %s and was not refreshed: a name that "
+                     "entered since is missing." % hot["session"])
+    liquid = [r for r in outside if r["median_value"] >= MIN_VALUE_IDR]
+    shown = liquid[:QUEUE_SHOWN]
+    if shown:
+        more = len(liquid) - len(shown)
+        lines.append("  not on the board, by sessions in the market's top %d of the last %d: %s%s"
+                     % (n, lb, ", ".join("%s %d" % (r["symbol"], r["days_top"]) for r in shown),
+                        " (+%d more)" % more if more > 0 else ""))
+    if len(outside) > len(liquid):
+        lines.append("  %d more are under the Rp%.0fbn median floor and not listed."
+                     % (len(outside) - len(liquid), MIN_VALUE_IDR / 1e9))
+    silent = [r["symbol"] for r in liquid if not r.get("has_alias") and r["days_top"] >= 3]
+    if silent:
+        lines.append("  no alias row, so chatter is not counted: %s" % ", ".join(silent[:15]))
+    return head, lines
+
+
 # --------------------------------------------------------------------------- rendering
 
-def summary_text(session, board, rows, p, i, stale_note) -> str:
+def summary_text(session, board, rows, p, i, stale_note, universe=None, regular=None) -> str:
     """Plain text for notify_telegram.py.
 
     Plain text on purpose and NEVER markdown: Telegram's MarkdownV2 returns HTTP 400 on
@@ -386,6 +447,9 @@ def summary_text(session, board, rows, p, i, stale_note) -> str:
     L = ["IDX DAILY - session %s" % session]
     if stale_note:
         L.append(stale_note)
+    uni_head, uni_lines = universe or ("", [])
+    if uni_head:
+        L.append(uni_head)
 
     names = [c["symbol"] for c in (board.get("candidates") or [])]
     seen, ordered = set(), []
@@ -488,6 +552,7 @@ def summary_text(session, board, rows, p, i, stale_note) -> str:
                     direction(trajectory(p, r["symbol"], i))))
     if not gap:
         L.append("  none")
+    L.extend(uni_lines)
 
     L.append("")
     L.append("AVOID - RVOL >= %.1f, the edge inverts above here (%d)" % (B.EXHAUST_RVOL,
@@ -510,7 +575,9 @@ def summary_text(session, board, rows, p, i, stale_note) -> str:
     try:
         if VR is None:
             raise VR_ERR or RuntimeError("volume_ramp_section not loaded")
-        L.extend(VR.section_lines(p, sorted(p.raw_close), i, fmt_px))
+        # `regular`, not everything scored: the owner's setting for this section (2026-10-06)
+        # is the panel pool plus EXTRA_WATCH, and the market list must not widen it unasked.
+        L.extend(VR.section_lines(p, regular or sorted(p.raw_close), i, fmt_px))
     except Exception as e:
         traceback.print_exc(file=sys.stderr)
         L.append("VOLUME RAMP / SUPPORT - unavailable this run (%s)" % type(e).__name__)
@@ -559,7 +626,20 @@ def main() -> int:
     pool = sorted(rp.close)
     log("panel %d symbols, last session %s" % (len(pool), rp.dates[-1] if rp.dates else "?"))
 
-    p, bars, failed = build_yahoo_panel(pool + [s for s in EXTRA_WATCH if s not in pool], log)
+    # A name whose panel history stopped weeks ago is in the price files and not on the board:
+    # ENRG's last bar is 2026-08-14. Counting it as "in the pool" filed it under LEG 2 ONLY and
+    # kept it out of UNIVERSE GAP, the one section written to say the board cannot see it.
+    n = len(rp.dates)
+    live = {s for s, cl in rp.close.items() if any(j in cl for j in range(n - PANEL_RECENT, n))}
+
+    hot = load_market_hot()
+    extras = list(dict.fromkeys(
+        s for s in EXTRA_WATCH + [r["symbol"] for r in (hot or {}).get("hot", [])]
+        if s not in pool))
+    log("market list: %s, %d names scored outside the panel files"
+        % ("session %s" % hot["session"] if hot else "UNAVAILABLE", len(extras)))
+
+    p, bars, failed = build_yahoo_panel(pool + extras, log)
     if failed:
         log("   %d symbols unavailable: %s" % (len(failed), ", ".join(failed[:10])))
     if not p.dates:
@@ -591,8 +671,10 @@ def main() -> int:
         if board.get("session") and not matched:
             stale = ("BOARD snapshot is session %s, so it is omitted below; the price sections "
                      "are %s." % (board["session"], session))
-        rows = collect(p, set(pool), EXTRA_WATCH, i, log)
-        text = summary_text(session, board if matched else {}, rows, p, i, stale)
+        rows = collect(p, live, set(pool) | set(extras), i, log)
+        regular = sorted(s for s in set(pool) | set(EXTRA_WATCH) if s in p.raw_close)
+        text = summary_text(session, board if matched else {}, rows, p, i, stale,
+                            universe_note(hot, session, live), regular)
         if a.summary:
             print(text)
         else:

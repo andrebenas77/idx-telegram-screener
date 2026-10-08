@@ -51,6 +51,13 @@ if [[ -f "$LAST" ]]; then
     fi
 fi
 
+# The market's own top-40-by-value list, so a name the panel has never held (SQMI, DSSA) is
+# still scored below. Free: Yahoo only, about a minute. Warn-not-fail: without it the report
+# reads the last list on disk and says on its first line which session that list is from.
+if ! (cd "$ROOT" && timeout 600 python3 scripts/build_market_hot.py --quiet >>"$LOG" 2>&1); then
+    log "[!] build_market_hot.py failed -- the report will use the last market list on disk"
+fi
+
 TEXT="$(cd "$ROOT" && timeout 900 python3 scripts/build_daily_report.py --summary 2>>"$LOG")"
 CODE=$?
 
