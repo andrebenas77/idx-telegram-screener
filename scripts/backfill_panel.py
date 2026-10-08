@@ -234,6 +234,17 @@ def main() -> int:
                          "runs otherwise read the cached file for free)")
     args = ap.parse_args()
 
+    # `--refresh-actions` skips loading the cached action file, so with `--symbols` the run
+    # used to fetch actions for the named symbols only and then write that as the WHOLE file:
+    # one symbol in place of 111. Adding a name does not need the flag any more (a symbol the
+    # cached file lacks is fetched and merged, below), so the combination is simply refused.
+    if args.refresh_actions and args.symbols:
+        print("--refresh-actions cannot be combined with --symbols: it would re-adjust only the "
+              "named symbols' refreshed slice.\n"
+              "  to ADD a name : --symbols X --incremental --window 725   (its actions are fetched and merged)\n"
+              "  to REFRESH all: --refresh-actions                         (full rebuild)")
+        return 2
+
     inv = InvezgoClient()
     if not inv.enabled:
         print("INVEZGO_API_KEY not set — see scripts/probe_invezgo.py")
@@ -253,9 +264,10 @@ def main() -> int:
     # An INCREMENTAL run is different and safe: merge() replaces only rows whose symbol is
     # in `refreshed` (= this run's universe) inside the window, and leaves every other
     # symbol untouched. That is exactly the shape needed to ADD a name to an existing
-    # panel, so `--symbols X --incremental --window 730` pulls two years for X and merges
+    # panel, so `--symbols X --incremental --window 725` pulls two years for X and merges
     # it in for ~1 request, instead of forcing a 160-symbol rebuild that would also
-    # re-fetch ~160 symbols' corporate actions from Sectors.
+    # re-fetch ~160 symbols' corporate actions from Sectors. 725, not 730: Invezgo returns
+    # ZERO rows for a 730-day span (InvezgoClient.HORIZON_DAYS).
     global OUT
     if partial and not args.incremental:
         OUT = OUT / "_partial"
@@ -292,6 +304,7 @@ def main() -> int:
     flows: dict[str, list] = defaultdict(list)   # YYYY-MM -> rows
     prices: dict[str, list] = defaultdict(list)
     all_actions: dict[str, dict] = {}
+    new_actions: dict[str, dict] = {}            # fetched for a name being ADDED; merged on write
     stats = {"symbols_ok": 0, "symbols_failed": [], "broker_days": 0, "price_days": 0,
              "brokers_seen": set(), "residual_breaks": [], "action_notes": {}}
 
@@ -317,13 +330,26 @@ def main() -> int:
         if args.skip_actions or not closes:
             factors, notes = {d: 1.0 for d in closes}, {"applied": [], "unhandled": []}
         else:
-            if cached_actions is not None:
+            if cached_actions is not None and (sym in cached_actions or not args.symbols):
                 # Incremental runs read the file written by the last full backfill.
                 # Free, and correct as long as it is refreshed periodically — the ARB
                 # break scan below is the backstop for anything it has gone stale on.
                 actions = cached_actions.get(sym)
             else:
                 actions = sec.corporate_actions(sym)
+                if cached_actions is not None:
+                    # A NAMED symbol the cached file has never held: a name being added to
+                    # the panel. It used to fall through `.get()` as None and be written
+                    # unadjusted, which for DSSA books the 25:1 split of 2026-04-09 as a
+                    # -96% day. Only on `--symbols`: the daily run keeps reading the file
+                    # as it is, because adjusting a 90-day slice of a name whose older rows
+                    # are raw would put the break at the window edge instead.
+                    if actions is None:
+                        stats["symbols_failed"].append(sym)
+                        print(f"[{i:>3}/{len(universe)}] {sym:<6} NOT ADDED — no corporate "
+                              f"actions from Sectors, and without them a split reads as a crash")
+                        continue
+                    new_actions[sym] = actions
             all_actions[sym] = actions
             factors, notes = adjustment_factors(actions, closes)
         if notes["applied"] or notes["unhandled"]:
@@ -469,9 +495,11 @@ def main() -> int:
         n_flow = write("flows", flows, FLOW_HDR)
         n_px = write("prices", prices, PX_HDR)
 
-    # Never overwrite the full corporate-action record with a partial one.
+    # Never overwrite the full corporate-action record with a partial one. A run that read
+    # the cached file writes it back only when it had to fetch a new name, and then as the
+    # old record plus that name.
     if args.incremental and cached_actions is not None:
-        all_actions = {}
+        all_actions = {**cached_actions, **new_actions} if new_actions else {}
     if all_actions:
         (OUT / "corporate_actions.json").write_text(
             json.dumps(all_actions, ensure_ascii=False, indent=1), encoding="utf-8")
