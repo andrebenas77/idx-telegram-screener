@@ -56,7 +56,7 @@ MEDC,Medco Energi Internasional,Medco,Energy,1,0
 PGEO,Pertamina Geothermal Energy,Pertamina Geothermal,Energy,1,0
 AKRA,AKR Corporindo,AKR,Energy,1,0
 ELSA,Elnusa,Elnusa,Energy,1,0
-ENRG,Energi Mega Persada,Energi Mega,Energy,0,0
+ENRG,Energi Mega Persada,Energi Mega,Energy,1,0
 RAJA,Rukun Raharja,Rukun Raharja,Energy,1,1
 TOBA,TBS Energi Utama,TBS Energi,Energy,1,0
 ICBP,Indofood CBP Sukses Makmur,Indofood CBP,Consumer,1,0
@@ -118,9 +118,9 @@ WIKA,Wijaya Karya,Wika,Construction,1,0
 PTPP,PP Persero,,Construction,1,0
 ADHI,Adhi Karya,Adhi Karya,Construction,1,0
 DSSA,Dian Swastatika Sentosa,Dian Swastatika,Coal,1,0
-BULL,Buana Lintas Lautan,Buana Lintas Lautan,Shipping,0,1
-EMAS,Merdeka Gold Resources,Merdeka Gold,Mining,0,1
-INET,Sinergi Inti Andalan Prima,,Tech,0,0
+BULL,Buana Lintas Lautan,Buana Lintas Lautan,Shipping,1,1
+EMAS,Merdeka Gold Resources,Merdeka Gold,Mining,1,1
+INET,Sinergi Inti Andalan Prima,,Tech,1,0
 BNBR,Bakrie & Brothers,Bakrie & Brothers|Bakrie Brothers,Conglomerate,0,0
 IATA,Karya Pacific Energy,Karya Pacific Energy|MNC Energy,Energy,0,0
 SINI,Singaraja Putra,Singaraja Putra,,0,1
