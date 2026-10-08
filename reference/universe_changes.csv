@@ -1,0 +1,2 @@
+date,symbol,action,check0_before_pp,check0_after_pp,events_before,events_after,note
+2026-10-08,DSSA,added to panel (liquid=1),1.2545,1.2555,1305,1314,"top-40 by value on 40 of 40 sessions; 470 bars from 2024-10-14; 25:1 split of 2026-04-09 adjusted; 9 candidate days; check 0 bar +0.50pp; benchmark-ihsg.csv ends 2026-08-06 so check 0 reads events to early Aug only"
