@@ -394,8 +394,11 @@ def collect(p, pool, extras, i, log):
             continue
         mv = median_value(p, s, i)
         f_then = features(p, s, i - RSI_BACK)
+        brk = price_break(p, s, i)
         rows.append({
             "rsi_then": f_then["rsi"] if f_then else None,
+            # no multiple across a broken price history: the two weeks are in different units
+            "vol_x": None if brk else volume_then_now(p, s, i),
             "symbol": s, "in_pool": s in pool,
             "rvol5": f["rvol5"], "rsi": f["rsi"], "dd60": f["dd60"],
             "cmf20": f.get("cmf20"), "clv": f.get("clv"), "trend": f.get("trend"),
@@ -404,28 +407,54 @@ def collect(p, pool, extras, i, log):
             "pass2": is_momentum(f, B.RVOL_MIN, B.DD_MIN, B.RSI_MIN, B.RVOL_MAX),
             "exhaust": f["rvol5"] >= B.EXHAUST_RVOL,
             "vh": volume_high(p, s, i),
-            "vh_break": price_break(p, s, i),
+            "vh_break": brk,
         })
     log("   scored %d symbols" % len(rows))
     return rows
 
 
-def rsi_txt(r) -> str:
-    """RSI HEADING as "then->now", e.g. "44->58": RSI RSI_BACK sessions ago, and RSI today.
+def volume_then_now(p, sym, i, back: int = RSI_BACK, win: int = 5):
+    """This week's average volume as a multiple of the week RSI_BACK sessions ago.
 
-    The gate reads a LEVEL (RSI >= 55), so 58 on the way up from 44 and 58 on the way down
-    from 80 are the same row to it. The owner's reading (2026-10-08) is that the way it is
-    heading matters, and a move up to 55+ from a lower number is the good case when RVOL and
-    momentum are there. Twenty sessions, their call: "Indonesia market is a little bit slow",
-    so the swing is a month, not a week. Both numbers are printed and no word is put on
-    them: a move through 55 is visible as it stands.
+    The owner's point, 2026-10-08, on SQMI printing 81->58: "the RSI at 81 but at what volume
+    that RSI? compare to current 58, the volume will be much different". It was: 850m shares a
+    day in the week RSI read 81, 405m in the week it read 58, price 105 against 106. RSI says
+    how strong the closes were and nothing about how much traded to make them.
 
-    A LABEL, NOT A GATE. Whether heading separates winners is being tested
-    (reference/rsi-heading.md); nothing here changes which names are listed. "?" when the
-    name has too little history 20 sessions back to have an RSI.
+    Shares against shares for the same name, so the multiple needs no baseline. RVOL then and
+    RVOL now would not do: each is measured against its OWN trailing month, and SQMI's month
+    in October holds September's volume, so 2.11 against 0.80 overstates a halving. Five
+    sessions, the window rvol5 already uses for "this week". None when either week is not all
+    there.
     """
-    then = r.get("rsi_then")
-    return "%s->%.0f" % ("?" if then is None else "%.0f" % then, r["rsi"])
+    vo = p.volume.get(sym) or {}
+    now = [vo.get(j) for j in range(i - win + 1, i + 1)]
+    then = [vo.get(j) for j in range(i - back - win + 1, i - back + 1)]
+    if any(v is None for v in now + then) or sum(then) <= 0:
+        return None
+    return sum(now) / sum(then)
+
+
+def rsi_txt(r) -> str:
+    """RSI HEADING with its volume, e.g. "81->58 (vol x0.5)".
+
+    81->58 is RSI RSI_BACK sessions ago and RSI today. The gate reads a LEVEL (RSI >= 55), so
+    58 on the way up from 44 and 58 on the way down from 80 are the same row to it. The
+    owner's reading (2026-10-08) is that the way it is heading matters, and a move up to 55+
+    from a lower number is the good case when RVOL and momentum are there. Twenty sessions,
+    their call: "Indonesia market is a little bit slow", so the swing is a month, not a week.
+
+    (vol x0.5) is volume_then_now: this week's volume is half that week's. Read together they
+    are four different rows the RSI pair alone prints as two: up on more volume, up on less,
+    down on more, down on less. No word is put on any of them.
+
+    A LABEL, NOT A GATE. RSI heading on its own was tested and refuted
+    (reference/rsi-heading.md sec 9); heading WITH volume has not been tested at all. Nothing
+    here changes which names are listed. "?" when the history 20 sessions back is not there.
+    """
+    then, vx = r.get("rsi_then"), r.get("vol_x")
+    vol = "?" if vx is None else ("x10+" if vx >= 10 else "x%.1f" % vx)
+    return "%s->%.0f (vol %s)" % ("?" if then is None else "%.0f" % then, r["rsi"], vol)
 
 
 def volume_high_lists(rows):
@@ -478,8 +507,9 @@ def ideas_text(session, rows, board_names=None) -> str:
           "  hot (RVOL %.1f+): %s" % (B.EXHAUST_RVOL, names(hot))]
     if left_out:
         L.append("  left out, price history broken: %s" % names(left_out, heading=False))
-    L.append("  a->b = RSI %d sessions ago -> now: a label, not a gate. * = not on the board panel."
+    L.append("  a->b = RSI %d sessions ago -> now. vol xN = this week's volume against that week's."
              % RSI_BACK)
+    L.append("  A label, not a gate. * = not on the board panel.")
     L.append("  Volume above %d%% of the name's own last %d sessions. Not the validated board. Rows at 07:30."
              % (round(VOL_TOP * 100), VOL_HIST))
     return "\n".join(L)
@@ -664,8 +694,9 @@ def summary_text(session, board, rows, p, i, stale_note, universe=None, regular=
         L.append("  none")
 
     L.append("")
-    L.append("RSI a->b is RSI %d sessions ago -> now. A label under test, not a gate: the gates read only b."
+    L.append("RSI a->b is RSI %d sessions ago -> now; (vol xN) is this week's volume against that week's."
              % RSI_BACK)
+    L.append("A label, not a gate: the gates read only b. RSI heading alone failed its test; with volume it is untested.")
     L.append("[label] is where rvol5 has been over %d sessions. The board sees only the level;"
              % TRAJ_SESSIONS)
     L.append("a name falling through the band from above 3.0 is not the same as one rising in.")
