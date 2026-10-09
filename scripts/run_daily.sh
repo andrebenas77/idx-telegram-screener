@@ -211,7 +211,22 @@ fi
 VH_SUMMARY=""
 python3 "${ROOT}/scripts/build_market_hot.py" --quiet >>"$LOG" 2>&1 \
     || log "[!] market list not rebuilt — VOLUME HIGH reads the last list on disk"
-VH_SUMMARY="$(timeout 600 python3 "${ROOT}/scripts/build_daily_report.py" --ideas 2>>"$LOG")"
+VH_SUMMARY="$(timeout 600 python3 "${ROOT}/scripts/build_daily_report.py" --ideas --log-cases 2>>"$LOG")"
+
+# The forward test's ledger (reference/rsi-volume.md). --log-cases above appended this
+# session's names and the case each was in; committing it here, at 07:00, is what proves the
+# label was fixed before the session it is judged on had traded. Tracked on purpose: it is
+# derived from public Yahoo bars, holds no vendor data, and a ledger that lived only under
+# data/panel/ would be one disk failure from ending a two-year test.
+if [[ -n "$(git status --porcelain data/forward/volume_high_cases.jsonl)" ]]; then
+    if git add data/forward/volume_high_cases.jsonl \
+       && git commit -q -m "Volume-high cases ${DATE}" >>"$LOG" 2>&1 \
+       && git push -q origin main >>"$LOG" 2>&1; then
+        log "volume-high cases committed"
+    else
+        log "[!] volume-high cases written but NOT pushed"
+    fi
+fi
 set -e
 $MOM_OK && log "momentum board built" || log "[!!] momentum board NOT built"
 $BRK_OK && log "broker board built" || log "[!] broker board NOT built"
@@ -294,6 +309,25 @@ fi
 
 # 6d. The VOLUME HIGH block is promised every morning, so its absence is said, not skipped.
 [[ -n "$VH_SUMMARY" ]] || WARN+=("VOLUME HIGH names not built — see the log; the 07:30 report still carries them")
+
+# 6e. A session the ledger misses is gone from the forward test for good: gaps are never
+# backfilled, because a label written later is written on restated prices. So a missing
+# line is said the same morning. The ledger's session is the board's, by construction.
+LEDGER_STATE="$(python3 -c "
+import json
+last = ''
+try:
+    for line in open('${ROOT}/data/forward/volume_high_cases.jsonl', encoding='utf-8'):
+        last = json.loads(line).get('session') or last
+except Exception:
+    pass
+try:
+    board = json.load(open('${ROOT}/data/panel/momentum_board.json', encoding='utf-8'))['session']
+except Exception:
+    board = '?'
+print('ok' if last == board else 'last logged %s, board session %s' % (last or 'none', board))
+" 2>>"$LOG" || true)"
+[[ "$LEDGER_STATE" == "ok" ]] || WARN+=("volume-high cases not logged for this session (${LEDGER_STATE}) — a gap in the forward test")
 
 # 6c. The benchmark's age. A stale one raises nothing anywhere — excess returns just come
 # back empty for the missing dates — so it has to be counted and said out loud.

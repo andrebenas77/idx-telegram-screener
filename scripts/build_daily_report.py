@@ -117,6 +117,11 @@ BREAK_RATIO = 2.0          # a one-session close ratio at or beyond this, either
 IDEAS_SHOWN = 15           # names per line in the 07:00 VOLUME HIGH block
 RSI_BACK = 20              # RSI HEADING: sessions back that today's RSI is set against. See rsi_txt.
 
+# The forward test's ledger (reference/rsi-volume.md). TRACKED, unlike everything under
+# data/panel/: these are labels derived from public Yahoo bars, no vendor data, and a git commit
+# made at 07:00 is the proof that each label was fixed before its outcome existed.
+CASES = ROOT / "data" / "forward" / "volume_high_cases.jsonl"
+
 GUARDED = ["scripts/build_momentum_board.py", "data/panel/momentum_board.json",
            "docs/momentum.html", "docs/index.html"]
 
@@ -457,6 +462,72 @@ def rsi_txt(r) -> str:
     return "%s->%.0f (vol %s)" % ("?" if then is None else "%.0f" % then, r["rsi"], vol)
 
 
+def case_of(r) -> str | None:
+    """Which of the four cases a row is in: RSI heading, then volume. UU, UD, DU or DD.
+
+    First letter: RSI above (U) or not above (D) where it was RSI_BACK sessions ago. Second:
+    this week's volume above (U) or not above (D) that week's. None when either is unknown.
+    The cut is at "the same as then" on both axes because that is what the printed label
+    shows; nothing is tuned.
+    """
+    then, vx = r.get("rsi_then"), r.get("vol_x")
+    if then is None or vx is None:
+        return None
+    return ("U" if r["rsi"] > then else "D") + ("U" if vx > 1.0 else "D")
+
+
+def log_cases(session, rows, board_names, path=None) -> int:
+    """Append one session's VOLUME HIGH names, with the case each was in, to the forward ledger.
+
+    FIRST WRITE WINS. A session already in the file is never rewritten, so the ledger says
+    what the 07:00 message said and not what a later run, on restated prices, would have
+    said. Returns the number of names written, or -1 when the session was already there.
+
+    One marker line per session (symbol null, n = names) and then one line per name, so a
+    session on which nothing traded a volume high is still a logged session and not a gap.
+    Names left out for a broken price history are written too, flagged, so the reader can
+    see what was excluded and when.
+    """
+    path = path or CASES
+    if path.exists():
+        with path.open(encoding="utf-8") as fh:
+            for raw in fh:
+                try:
+                    if json.loads(raw).get("session") == session:
+                        return -1
+                except ValueError:
+                    continue
+    _, band, below, hot, left_out = volume_high_lists(rows)
+    try:
+        import subprocess
+        code = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
+                              capture_output=True, text=True, timeout=10).stdout.strip() or None
+    except Exception:
+        code = None
+    stamp = datetime.datetime.now(WIB).isoformat(timespec="seconds")
+    on_board = set(board_names or [])
+    lines = [{"session": session, "symbol": None, "n": len(band) + len(below) + len(hot),
+              "left_out": len(left_out), "logged_at": stamp, "code": code,
+              "board": sorted(on_board) if board_names is not None else None}]
+    for name, rs in (("band", band), ("below", below), ("hot", hot), ("left_out", left_out)):
+        for r in rs:
+            lines.append({
+                "session": session, "symbol": r["symbol"], "list": name,
+                "case": None if name == "left_out" else case_of(r),
+                "rsi_then": None if r.get("rsi_then") is None else round(r["rsi_then"], 2),
+                "rsi": round(r["rsi"], 2),
+                "vol_x": None if r.get("vol_x") is None else round(r["vol_x"], 4),
+                "rvol5": round(r["rvol5"], 4), "vpct50": r["vh"]["vpct50"],
+                "adtv20": round(r["vh"]["adtv20"]), "close": r["close"],
+                "in_pool": r["in_pool"], "on_board": r["symbol"] in on_board,
+            })
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="\n") as fh:
+        for line in lines:
+            fh.write(json.dumps(line, ensure_ascii=False) + "\n")
+    return len(lines) - 1 - len(left_out)
+
+
 def volume_high_lists(rows):
     """VOLUME HIGH, split by where rvol5 sits. One selection, read by the 07:30 report and by
     the 07:00 block, so the two can never name different stocks.
@@ -740,6 +811,10 @@ def main() -> int:
                     help="render the last N sessions and stop, for eyeballing")
     ap.add_argument("--ideas", action="store_true",
                     help="print only the VOLUME HIGH names, for the 07:00 screener message")
+    ap.add_argument("--log-cases", action="store_true",
+                    help="append this session's VOLUME HIGH names and their case to the forward "
+                         "ledger (first write wins). Passed by run_daily.sh only; never honoured "
+                         "with --date, --backtest-render or --dry-run")
     a = ap.parse_args()
 
     # The house idiom: under --summary stdout carries ONLY the message, so $(... --summary)
@@ -807,9 +882,21 @@ def main() -> int:
             stale = ("BOARD snapshot is session %s, so it is omitted below; the price sections "
                      "are %s." % (board["session"], session))
         rows = collect(p, live, set(pool) | set(extras), i, log)
+        board_names = (list(dict.fromkeys(c["symbol"] for c in board.get("candidates") or []))
+                       if matched else None)
+        if a.log_cases:
+            # stderr, not log(): under --ideas stdout is the message and log() is muted, and
+            # run_daily.sh sends stderr to the run log, which is where this belongs.
+            if a.date or a.backtest_render or a.dry_run:
+                print("volume-high cases: NOT logged (--date, --backtest-render or --dry-run)",
+                      file=sys.stderr)
+            else:
+                n = log_cases(session, rows, board_names)
+                print("volume-high cases: session %s %s" % (
+                    session, "already in the ledger, left as it is" if n < 0 else "logged, %d names" % n),
+                    file=sys.stderr)
         if a.ideas:
-            print(ideas_text(session, rows, list(dict.fromkeys(
-                c["symbol"] for c in board.get("candidates") or [])) if matched else None))
+            print(ideas_text(session, rows, board_names))
             continue
         regular = sorted(s for s in set(pool) | set(EXTRA_WATCH) if s in p.raw_close)
         text = summary_text(session, board if matched else {}, rows, p, i, stale,
