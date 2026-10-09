@@ -454,8 +454,10 @@ def rsi_txt(r) -> str:
     down on more, down on less. No word is put on any of them.
 
     A LABEL, NOT A GATE. RSI heading on its own was tested and refuted
-    (reference/rsi-heading.md sec 9); heading WITH volume has not been tested at all. Nothing
-    here changes which names are listed. "?" when the history 20 sessions back is not there.
+    (reference/rsi-heading.md sec 9); heading WITH volume is under a forward-only test
+    (reference/rsi-volume.md) whose deciding read is 450 logged sessions away. Until then
+    nothing here changes which names are listed or in what order. "?" when the history 20
+    sessions back is not there.
     """
     then, vx = r.get("rsi_then"), r.get("vol_x")
     vol = "?" if vx is None else ("x10+" if vx >= 10 else "x%.1f" % vx)
@@ -767,7 +769,8 @@ def summary_text(session, board, rows, p, i, stale_note, universe=None, regular=
     L.append("")
     L.append("RSI a->b is RSI %d sessions ago -> now; (vol xN) is this week's volume against that week's."
              % RSI_BACK)
-    L.append("A label, not a gate: the gates read only b. RSI heading alone failed its test; with volume it is untested.")
+    L.append("A label, not a gate: the gates read only b. RSI heading alone failed its test; with volume it is "
+             "under a forward test, read in 2028.")
     L.append("[label] is where rvol5 has been over %d sessions. The board sees only the level;"
              % TRAJ_SESSIONS)
     L.append("a name falling through the band from above 3.0 is not the same as one rising in.")
