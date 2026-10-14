@@ -5,3 +5,7 @@
 {"session": "2026-10-09", "symbol": "ENRG", "list": "below", "case": "DU", "rsi_then": 70.56, "rsi": 33.99, "vol_x": 1.0145, "rvol5": 1.3342, "vpct50": 0.94, "adtv20": 112373098834, "close": 995.0, "in_pool": true, "on_board": false}
 {"session": "2026-10-09", "symbol": "SMIL", "list": "below", "case": "UU", "rsi_then": 67.12, "rsi": 75.96, "vol_x": 1.3858, "rvol5": 1.3147, "vpct50": 0.96, "adtv20": 24402325730, "close": 486.0, "in_pool": false, "on_board": false}
 {"session": "2026-10-09", "symbol": "FORU", "list": "left_out", "case": null, "rsi_then": 75.47, "rsi": 56.14, "vol_x": null, "rvol5": 3.5755, "vpct50": 0.96, "adtv20": 79001918953, "close": 140.0, "in_pool": false, "on_board": false}
+{"session": "2026-10-13", "symbol": null, "n": 2, "left_out": 1, "logged_at": "2026-10-14T07:07:09+07:00", "code": "4fa3c7d", "board": ["TOWR"]}
+{"session": "2026-10-13", "symbol": "VKTR", "list": "below", "case": "DU", "rsi_then": 40.57, "rsi": 25.52, "vol_x": 1.1126, "rvol5": 1.2643, "vpct50": 1.0, "adtv20": 53288357614, "close": 570.0, "in_pool": false, "on_board": false}
+{"session": "2026-10-13", "symbol": "SMIL", "list": "below", "case": "UU", "rsi_then": 63.73, "rsi": 70.45, "vol_x": 1.3959, "rvol5": 1.2054, "vpct50": 0.94, "adtv20": 25373776990, "close": 488.0, "in_pool": false, "on_board": false}
+{"session": "2026-10-13", "symbol": "FORU", "list": "left_out", "case": null, "rsi_then": 42.29, "rsi": 40.82, "vol_x": null, "rvol5": 3.1621, "vpct50": 0.9, "adtv20": 96601167241, "close": 140.0, "in_pool": false, "on_board": false}
