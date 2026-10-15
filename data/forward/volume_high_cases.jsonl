@@ -9,3 +9,6 @@
 {"session": "2026-10-13", "symbol": "VKTR", "list": "below", "case": "DU", "rsi_then": 40.57, "rsi": 25.52, "vol_x": 1.1126, "rvol5": 1.2643, "vpct50": 1.0, "adtv20": 53288357614, "close": 570.0, "in_pool": false, "on_board": false}
 {"session": "2026-10-13", "symbol": "SMIL", "list": "below", "case": "UU", "rsi_then": 63.73, "rsi": 70.45, "vol_x": 1.3959, "rvol5": 1.2054, "vpct50": 0.94, "adtv20": 25373776990, "close": 488.0, "in_pool": false, "on_board": false}
 {"session": "2026-10-13", "symbol": "FORU", "list": "left_out", "case": null, "rsi_then": 42.29, "rsi": 40.82, "vol_x": null, "rvol5": 3.1621, "vpct50": 0.9, "adtv20": 96601167241, "close": 140.0, "in_pool": false, "on_board": false}
+{"session": "2026-10-14", "symbol": null, "n": 2, "left_out": 0, "logged_at": "2026-10-15T07:06:32+07:00", "code": "07a2fca", "board": ["GEMS", "TOWR"]}
+{"session": "2026-10-14", "symbol": "VKTR", "list": "below", "case": "DU", "rsi_then": 23.13, "rsi": 22.7, "vol_x": 1.5281, "rvol5": 1.4203, "vpct50": 0.9, "adtv20": 57449760364, "close": 500.0, "in_pool": false, "on_board": false}
+{"session": "2026-10-14", "symbol": "PANI", "list": "below", "case": "UD", "rsi_then": 28.63, "rsi": 54.66, "vol_x": 0.717, "rvol5": 0.8964, "vpct50": 0.96, "adtv20": 25123109675, "close": 5100.0, "in_pool": true, "on_board": false}
