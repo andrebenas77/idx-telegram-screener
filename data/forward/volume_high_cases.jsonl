@@ -12,3 +12,9 @@
 {"session": "2026-10-14", "symbol": null, "n": 2, "left_out": 0, "logged_at": "2026-10-15T07:06:32+07:00", "code": "07a2fca", "board": ["GEMS", "TOWR"]}
 {"session": "2026-10-14", "symbol": "VKTR", "list": "below", "case": "DU", "rsi_then": 23.13, "rsi": 22.7, "vol_x": 1.5281, "rvol5": 1.4203, "vpct50": 0.9, "adtv20": 57449760364, "close": 500.0, "in_pool": false, "on_board": false}
 {"session": "2026-10-14", "symbol": "PANI", "list": "below", "case": "UD", "rsi_then": 28.63, "rsi": 54.66, "vol_x": 0.717, "rvol5": 0.8964, "vpct50": 0.96, "adtv20": 25123109675, "close": 5100.0, "in_pool": true, "on_board": false}
+{"session": "2026-10-15", "symbol": null, "n": 5, "left_out": 0, "logged_at": "2026-10-16T07:06:56+07:00", "code": "9cbb96c", "board": ["ACES", "PWON", "TOWR"]}
+{"session": "2026-10-15", "symbol": "VKTR", "list": "band", "case": "DU", "rsi_then": 20.76, "rsi": 20.39, "vol_x": 2.9369, "rvol5": 1.697, "vpct50": 1.0, "adtv20": 60755724614, "close": 440.0, "in_pool": false, "on_board": false}
+{"session": "2026-10-15", "symbol": "ITMG", "list": "below", "case": "DU", "rsi_then": 68.48, "rsi": 48.28, "vol_x": 1.2107, "rvol5": 1.361, "vpct50": 0.92, "adtv20": 32406577750, "close": 25300.0, "in_pool": true, "on_board": false}
+{"session": "2026-10-15", "symbol": "ENRG", "list": "below", "case": "DU", "rsi_then": 57.91, "rsi": 24.3, "vol_x": 1.513, "rvol5": 1.2894, "vpct50": 0.92, "adtv20": 112551074434, "close": 925.0, "in_pool": true, "on_board": false}
+{"session": "2026-10-15", "symbol": "INDF", "list": "below", "case": "UU", "rsi_then": 45.59, "rsi": 64.51, "vol_x": 1.0604, "rvol5": 1.0455, "vpct50": 0.9, "adtv20": 32269411250, "close": 6950.0, "in_pool": true, "on_board": false}
+{"session": "2026-10-15", "symbol": "SQMI", "list": "below", "case": "DU", "rsi_then": 68.35, "rsi": 62.08, "vol_x": 1.8244, "rvol5": 1.0324, "vpct50": 0.96, "adtv20": 54660306950, "close": 100.0, "in_pool": true, "on_board": false}
