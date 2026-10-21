@@ -56,7 +56,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BOARD = PANEL / "momentum_board.json"
 OUT = PANEL / "trade_plan.json"
 ENVF = ROOT / "secrets" / "trade.env"
-SITE = "https://andrebenas77.github.io/idx-telegram-screener/momentum.html"
+SITE = "https://103-58-101-93.sslip.io/boards/momentum.html"
 
 
 def rupiah(x: float) -> str:
