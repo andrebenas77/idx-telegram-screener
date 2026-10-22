@@ -57,7 +57,7 @@ INTRADAY = ROOT / "data" / "intraday"
 BOARD = PANEL / "flow_board.json"
 RECORD = PANEL / "flow_record.csv"
 MEASURE = PANEL / "flowdir_measure.json"
-SITE = "https://103-58-101-93.sslip.io/boards/flow.html"
+SITE = "https://andrebenas77.github.io/idx-telegram-screener/flow.html"
 
 # Thresholds, all from reference/flow-direction.md section 6. Declared before this file existed.
 MIN_COVERAGE = 0.50         # same floor build_momentum_board.py uses

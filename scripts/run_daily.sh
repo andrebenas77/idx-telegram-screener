@@ -23,9 +23,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCK="/tmp/idx-screener.lock"
 LOGDIR="${HOME}/logs"
 STATE="${ROOT}/build/last_run.json"
-# Served from this box behind basic auth (scripts/serve_boards.sh). The repo is private
-# since 2026-10-21, so GitHub Pages no longer serves anything.
-SITE="https://103-58-101-93.sslip.io/boards/"
+SITE="https://andrebenas77.github.io/idx-telegram-screener/"
 
 mkdir -p "$LOGDIR" "${ROOT}/build"
 DATE="$(date +%Y-%m-%d)"
@@ -229,14 +227,6 @@ if [[ -n "$(git status --porcelain data/forward/volume_high_cases.jsonl)" ]]; th
         log "[!] volume-high cases written but NOT pushed"
     fi
 fi
-# Deliver every page rebuilt above to the password-protected site on this box. Last, so it
-# carries the crowded, momentum and broker boards of this run, not a mix of two days.
-SERVE_OK=false
-if bash "${ROOT}/scripts/serve_boards.sh" >>"$LOG" 2>&1; then
-    SERVE_OK=true
-else
-    log "[!] boards NOT copied to the web root - the link serves the last good copy"
-fi
 set -e
 $MOM_OK && log "momentum board built" || log "[!!] momentum board NOT built"
 $BRK_OK && log "broker board built" || log "[!] broker board NOT built"
@@ -281,15 +271,6 @@ fi
 # 3. The board that gets served must carry today's date.
 if ! grep -q "$DATE" "${ROOT}/docs/index.html" 2>/dev/null; then
     FATAL+=("docs/index.html does not mention ${DATE} — the board was not rebuilt")
-fi
-
-# 3b. The served copy is what the link opens, so it must carry today's date too. WARN, not
-#     FATAL: the board was built and archived in git; only the delivery is behind.
-SERVED="${WEBROOT:-/var/www/idxbook}/boards/index.html"
-if ! $SERVE_OK; then
-    WARN+=("boards were not copied to the web root - the link shows the last good copy")
-elif ! grep -q "$DATE" "$SERVED" 2>/dev/null; then
-    WARN+=("the served board does not mention ${DATE} - the link may show yesterday")
 fi
 
 # 4. Committed-but-unpushed is invisible from the server yet leaves the site on

@@ -133,9 +133,8 @@ Give the user a short read: top ~5 Most Crowded, **who's moving** (Δ1d/RVOL), t
 names. Attention + factual price/news framing only — no buy/sell views.
 
 ### Step 9 — Publish
-Show counts + top names, **ask before pushing**, then commit & push. The board is served
-privately from the VPS at `https://103-58-101-93.sslip.io/boards/` (basic auth; `scripts/serve_boards.sh`).
-The repo is private since 2026-10-21, so GitHub Pages serves nothing; git is the archive.
+Show counts + top names, **ask before pushing**, then commit & push. Confirm the live URL
+`https://andrebenas77.github.io/idx-telegram-screener/`. See [README.md](README.md) for git/Pages.
 (If the git push is network-blocked, publish via the manual upload path in the README.)
 
 ## Automated runs (VPS)

@@ -5,7 +5,7 @@ that reads your Telegram channels each day, counts how often each Indonesian (ID
 mentioned, and publishes a ranked **crowdedness** board — so you can see which stocks the crowd is
 piling into (potentially consensus/late) and which liquid names are being ignored (contrarian).
 
-**Boards:** served privately from the VPS at `https://103-58-101-93.sslip.io/boards/` (basic auth). The repo is private since 2026-10-21; GitHub Pages is off.
+**Live site (after setup):** `https://andrebenas77.github.io/idx-telegram-screener/`
 
 It measures **attention/chatter, not sentiment or direction.** Not investment advice.
 

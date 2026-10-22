@@ -85,7 +85,7 @@ except Exception as _e:               # the report must go out even if this sect
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "data" / "yahoo"          # under data/, which .gitignore already excludes
 BOARD = PANEL / "momentum_board.json"
-SITE = "https://103-58-101-93.sslip.io/boards/momentum.html"
+SITE = "https://andrebenas77.github.io/idx-telegram-screener/momentum.html"
 
 # Declared thresholds. Changed only deliberately, never to make a section look better.
 MIN_VALUE_IDR = 5e9        # median daily traded value for the leg-2 sections. See the docstring.

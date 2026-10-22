@@ -53,7 +53,7 @@ from overlay_test import features  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 WIB = timezone(timedelta(hours=7))
-SITE = "https://103-58-101-93.sslip.io/boards/accumulation.html"
+SITE = "https://andrebenas77.github.io/idx-telegram-screener/accumulation.html"
 
 BN = 1_000_000_000
 WINDOWS = (5, 20, 60)

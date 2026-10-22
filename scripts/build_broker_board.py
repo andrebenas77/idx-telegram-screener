@@ -45,7 +45,7 @@ from alpha_lib import PANEL, Panel  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 WIB = timezone(timedelta(hours=7))
-SITE = "https://103-58-101-93.sslip.io/boards/brokers.html"
+SITE = "https://andrebenas77.github.io/idx-telegram-screener/brokers.html"
 
 FLOW_WINDOW = 20
 
