@@ -244,3 +244,7 @@
 {"session": "2026-10-28", "symbol": "SMIL", "list": "below", "case": "DU", "rsi_then": 54.03, "rsi": 23.99, "vol_x": 1.3643, "rvol5": 1.079, "vpct50": 0.9, "adtv20": 30645621210, "close": 402.0, "in_pool": false, "on_board": false}
 {"session": "2026-10-28", "symbol": "TLKM", "list": "below", "case": "UU", "rsi_then": 18.02, "rsi": 45.42, "vol_x": 1.6898, "rvol5": 1.0299, "vpct50": 0.94, "adtv20": 659033032600, "close": 2070.0, "in_pool": true, "on_board": false}
 {"session": "2026-10-28", "symbol": "BRPT", "list": "below", "case": "UU", "rsi_then": 14.43, "rsi": 44.89, "vol_x": 1.9892, "rvol5": 0.9384, "vpct50": 0.9, "adtv20": 143047055475, "close": 1235.0, "in_pool": true, "on_board": false}
+{"session": "2026-10-29", "symbol": null, "n": 3, "left_out": 0, "logged_at": "2026-10-30T07:06:16+07:00", "code": "5d9303c", "board": ["JSMR"]}
+{"session": "2026-10-29", "symbol": "TPIA", "list": "band", "case": "UU", "rsi_then": 32.11, "rsi": 38.28, "vol_x": 3.4482, "rvol5": 1.812, "vpct50": 0.94, "adtv20": 262491659950, "close": 1350.0, "in_pool": true, "on_board": false}
+{"session": "2026-10-29", "symbol": "ENRG", "list": "below", "case": "DU", "rsi_then": 24.93, "rsi": 19.8, "vol_x": 1.7698, "rvol5": 1.1766, "vpct50": 0.9, "adtv20": 167634224959, "close": 665.0, "in_pool": true, "on_board": false}
+{"session": "2026-10-29", "symbol": "AMRT", "list": "below", "case": "DU", "rsi_then": 58.94, "rsi": 26.99, "vol_x": 2.113, "rvol5": 0.9035, "vpct50": 0.92, "adtv20": 86257497300, "close": 955.0, "in_pool": true, "on_board": false}
