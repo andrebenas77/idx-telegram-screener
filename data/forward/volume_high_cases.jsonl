@@ -409,3 +409,7 @@
 {"session": "2026-11-24", "symbol": "CPIN", "list": "below", "case": "UD", "rsi_then": 45.78, "rsi": 51.51, "vol_x": 0.8474, "rvol5": 1.1126, "vpct50": 0.9, "adtv20": 52061223250, "close": 2380.0, "in_pool": true, "on_board": false}
 {"session": "2026-11-24", "symbol": "BUMI", "list": "below", "case": "UU", "rsi_then": 25.48, "rsi": 63.7, "vol_x": 1.133, "rvol5": 1.004, "vpct50": 0.98, "adtv20": 344452605175, "close": 129.0, "in_pool": true, "on_board": false}
 {"session": "2026-11-24", "symbol": "DEWA", "list": "below", "case": "UD", "rsi_then": 22.17, "rsi": 60.07, "vol_x": 0.8232, "rvol5": 0.811, "vpct50": 0.92, "adtv20": 138879654760, "close": 242.0, "in_pool": true, "on_board": false}
+{"session": "2026-11-25", "symbol": null, "n": 3, "left_out": 0, "logged_at": "2026-11-26T07:06:00+07:00", "code": "bfc5dc2", "board": ["INDF"]}
+{"session": "2026-11-25", "symbol": "CDIA", "list": "band", "case": "UU", "rsi_then": 24.64, "rsi": 62.64, "vol_x": 3.5709, "rvol5": 2.3694, "vpct50": 0.92, "adtv20": 24463912420, "close": 376.0, "in_pool": false, "on_board": false}
+{"session": "2026-11-25", "symbol": "KOTA", "list": "below", "case": "UU", "rsi_then": 25.74, "rsi": 55.21, "vol_x": 3.811, "rvol5": 1.1593, "vpct50": 0.96, "adtv20": 41322064430, "close": 63.0, "in_pool": false, "on_board": false}
+{"session": "2026-11-25", "symbol": "SMIL", "list": "below", "case": "UU", "rsi_then": 23.99, "rsi": 37.54, "vol_x": 1.06, "rvol5": 1.1189, "vpct50": 0.96, "adtv20": 27869428270, "close": 398.0, "in_pool": false, "on_board": false}
